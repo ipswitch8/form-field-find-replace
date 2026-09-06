@@ -40,6 +40,52 @@ To open the fixtures directly for manual poking, load `test/fixture.html` or
 `test/fixture-bulk.html` in a browser tab, then run the extension against
 that tab.
 
+### Selenium end-to-end tests (the actually-loaded extension)
+
+The Playwright suite deliberately does **not** load the extension — Playwright
+cannot install a Firefox add-on, so those tests inject `content/find-replace.js`
+into a fixture page and call its functions directly. That is thorough coverage
+of the logic, but it means the real add-on plumbing is not exercised there.
+
+The Selenium suite closes that gap. It installs the built `.xpi` into a real
+Firefox as a temporary add-on and covers what Playwright structurally cannot:
+
+```bash
+npm run test:selenium          # builds the .xpi, then runs the suite
+npm run test:selenium:smoke    # quick "does Firefox + the add-on start" probe
+```
+
+Requires real Firefox and `selenium >= 4.11` (Selenium Manager fetches
+geckodriver automatically). Set `FFR_HEADLESS=0` to watch it run.
+
+| Test | What it proves that Playwright cannot |
+|---|---|
+| extension loads, popup renders | the manifest is accepted by a real Firefox, not merely lint-clean |
+| `browser.*` present in popup | popup.js runs against the real WebExtension APIs (the Playwright popup tests load `popup.html` over `file://`, where `browser` is undefined) |
+| field-type defaults | the shipped popup's defaults, in the real extension context |
+| storage.local round trip | persistence really survives a popup reload through the actual storage API |
+| injection without a gesture is refused | **security**: with no host permissions, Firefox refuses `scripting.executeScript` with "Missing host permission for the tab" until the user invokes the extension. If this ever stops failing, permissions have been widened and the extension can read every open page. |
+| toolbar action registered and clickable | the real entry point exists in Firefox's unified extensions panel and can be invoked |
+
+**Known boundary.** The full positive path — toolbar click grants `activeTab`,
+popup injects, replace runs — is not automated end to end. The popup opens in an
+out-of-process `browser` element inside browser chrome, and its document is not
+reachable from Marionette's chrome context. The two halves are covered
+separately (the gesture is clickable; injection without one is refused), and the
+replace logic itself is covered exhaustively by the Playwright suite. Closing
+the middle would need a WebDriver BiDi session against the popup's browsing
+context.
+
+Two environment notes, both specific to this host rather than the extension:
+
+- `install_addon` raises `NS_ERROR_FILE_ACCESS_DENIED` because endpoint
+  protection briefly locks the temp `.xpi` Firefox writes into its profile, so
+  Firefox's post-install cleanup fails. The add-on installs fine; the suite
+  tolerates that specific error and then *proves* the add-on is live by loading
+  a page that only exists inside it.
+- Chrome context needs `geckodriver --allow-system-access`. Firefox 142 rejects
+  the equivalent `-remote-allow-system-access` when passed via capabilities.
+
 ## Backreference / substitution grammar (regex mode)
 
 When **Regular expression** is checked, the replacement string is passed

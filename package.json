@@ -4,7 +4,10 @@
   "private": true,
   "description": "Firefox MV3 extension: find and replace text across editable form fields.",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "build:xpi": "web-ext build --overwrite-dest && node -e \"require('fs').copyFileSync('web-ext-artifacts/form_field_find_replace-0.1.0.zip','web-ext-artifacts/ffr.xpi')\"",
+    "test:selenium": "npm run build:xpi && python test/selenium/test_extension_e2e.py",
+    "test:selenium:smoke": "python test/selenium/smoke.py"
   },
   "devDependencies": {
     "@playwright/test": "^1.47.0"
