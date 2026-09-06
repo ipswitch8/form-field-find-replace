@@ -265,6 +265,20 @@ progress {
   color: var(--danger);
 }
 
+#undo-warning {
+  font-size: 12px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 0 0 8px;
+}
+
+#undo-warning[hidden] {
+  display: none;
+}
+
 #match-preview.status-error {
   color: var(--danger);
   border-color: var(--danger);

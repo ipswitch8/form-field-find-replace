@@ -20,9 +20,18 @@
  * replace (a mismatch is returned as a distinct error code without ever
  * entering the replace loop), and computeFirstMatchPreview() for the
  * popup's live first-match preview - which reuses buildMatcher(), never a
- * third matching implementation. Chunking/progress/cancel (phase 5), shadow
- * DOM/iframe recursion (phase 6), and undo (phase 7) remain out of scope
- * here.
+ * third matching implementation.
+ *
+ * Phase 5 scope: making the replace pipeline stay linear and responsive at
+ * thousands of fields (see SPEC.md's "Scale - assume thousands of fields"
+ * section). handleReplace() is now async and processes the pre-collected
+ * flat field array in CHUNK_SIZE batches with an `await setTimeout(0)`
+ * yield between batches, checks a module-level `cancelled` flag at the top
+ * of every chunk, posts throttled `{type:"progress",...}` messages, guards
+ * against catastrophic-backtracking regexes on a per-field time budget, and
+ * builds the undo snapshot array (flat, capped, phase-7 wires the actual
+ * Undo button/action to it). Shadow DOM/iframe recursion (phase 6) remains
+ * out of scope here.
  *
  * Testability: Playwright cannot easily load a Firefox extension, so tests
  * inject this file into a fixture page directly via addScriptTag/evaluate.
@@ -559,6 +568,193 @@
     return { ok: true, hasMatch: true, preview, error: null };
   }
 
+  // ---- Scale constants (phase 5) -------------------------------------------
+
+  /**
+   * Number of fields processed per chunk before yielding to the event loop.
+   * Tuned by actually measuring test/fixture-bulk.html's 5,000 seeded
+   * fields end-to-end (a full-page "field"->"field" no-op replace, so the
+   * measurement isolates loop/yield overhead from DOM-mutation cost;
+   * `response.wallMs`, 3 runs per chunk size, Firefox via this project's own
+   * Playwright harness):
+   *   -   50/chunk -> 100 chunk-boundary yields: 414-418ms observed.
+   *   -  200/chunk ->  25 chunk-boundary yields: 99-108ms observed.
+   *   - 1000/chunk ->   5 chunk-boundary yields: 16-20ms observed.
+   * The dominant cost at every size is NOT the per-field work (5,000 trivial
+   * regex replacements is sub-millisecond total) - it's `await new
+   * Promise(r => setTimeout(r, 0))` itself, which Firefox clamps to
+   * ~4ms/call, so wall time scales almost linearly with the NUMBER of
+   * chunks (yields), not the field count. That makes the choice a direct
+   * trade between responsiveness and overhead: fewer/bigger chunks are
+   * strictly faster wall-clock, but cancellation and progress-bar updates
+   * can only land at a chunk boundary, so bigger chunks feel less
+   * responsive - checking `cancelled` only every 1000 fields means up to
+   * 1000 fields could still get mutated after the user clicks Cancel, and
+   * on a page whose fields carry expensive framework listeners (unlike this
+   * synthetic fixture) that stretch could itself take much longer than the
+   * ~4ms yield it saved. 200 keeps overhead low (~100ms is imperceptible
+   * for even an 8,715-field page) while keeping cancellation/progress
+   * granularity at a comfortable ~4% of the run. Shipped as 200.
+   */
+  const CHUNK_SIZE = 200;
+
+  /** At most ~10 progress posts per second, so messaging itself never
+   * becomes the bottleneck on a large run. */
+  const PROGRESS_THROTTLE_MS = 100;
+
+  /**
+   * Per-field time budget guarding against catastrophic regex backtracking
+   * (SPEC.md "Matching": "if a single field takes over 100ms to process,
+   * abort that field and report it"). IMPORTANT LIMITATION, documented
+   * rather than hidden: a single `RegExp.prototype.exec`/`String.prototype
+   * .replace` call is a synchronous, non-interruptible operation on this
+   * single JS thread - there is no way in vanilla JS (no Worker, per the
+   * project's no-build-step/no-extra-infra constraint) to preempt a call
+   * that is already mid-backtrack. What this guard actually does is time
+   * each field's matching+replacement work and, the moment that field's
+   * total time exceeds FIELD_TIME_BUDGET_MS, refuse to count it as a normal
+   * success or skip - it is reported separately (`timedOut`) so the status
+   * line can flag it distinctly, and its result is never added to the undo
+   * snapshot, since it's exactly the kind of field an operator should
+   * inspect by hand rather than trust to an automated undo. This bounds the
+   * damage to a single already-slow field instead of silently treating a
+   * pathological regex like any other, and it is the field's OWN pattern
+   * that is slow, so the field never being touched again ends the risk.
+   */
+  const FIELD_TIME_BUDGET_MS = 100;
+
+  /**
+   * Undo snapshots are pushed as flat {el, value} entries during the SAME
+   * replace pass (never a second DOM walk, never a per-field object graph).
+   * Past this many entries the run runs without undo rather than growing an
+   * unbounded array on a page with hundreds of thousands of fields; the
+   * popup is told the collected field count up front (via handleCount's
+   * `totalFields`) so it can warn the user BEFORE Replace all is clicked,
+   * not after the run has already completed without undo support.
+   */
+  const DEFAULT_UNDO_SNAPSHOT_CAP = 50000;
+
+  // Mutable so tests can exercise cap behavior without allocating 50,001
+  // real DOM elements. Never touched by production code paths other than
+  // the two functions below.
+  let undoSnapshotCap = DEFAULT_UNDO_SNAPSHOT_CAP;
+
+  /** Test-only hook: override the undo snapshot cap. Not part of the
+   * message protocol. */
+  function setUndoSnapshotCapForTesting(n) {
+    undoSnapshotCap = typeof n === "number" && n > 0 ? n : DEFAULT_UNDO_SNAPSHOT_CAP;
+  }
+
+  /** Test-only hook: restore the real cap after a test overrides it. */
+  function resetUndoSnapshotCapForTesting() {
+    undoSnapshotCap = DEFAULT_UNDO_SNAPSHOT_CAP;
+  }
+
+  // Module-level cancellation flag. Checked at the top of every chunk inside
+  // handleReplace(); set by the "cancel" message action (and directly by
+  // tests) while a replace run's chunk loop is between `await` yields.
+  let cancelled = false;
+
+  /** Signal the in-flight replace run (if any) to stop after its current
+   * chunk. Already-replaced fields are left in place. */
+  function requestCancel() {
+    cancelled = true;
+  }
+
+  // The most recently built undo snapshot: a flat array of {el, value}
+  // entries (original values, captured before mutation) for the fields this
+  // run actually changed. Starting a new replace run overwrites this - one
+  // level of undo, per SPEC.md (the Undo action itself is wired up in
+  // phase 7; phase 5 only builds and caps the snapshot).
+  let lastUndoSnapshot = [];
+  let lastUndoAvailable = true;
+
+  /** Test/phase-7 accessor: length of the last replace run's undo snapshot. */
+  function getUndoSnapshotLength() {
+    return lastUndoSnapshot.length;
+  }
+
+  // Registered via window.__ffr.onProgress() (production would instead rely
+  // solely on the browser.runtime.sendMessage broadcast below, but a plain
+  // callback registry is also exposed so tests - which run in a page with no
+  // `browser` global at all - can observe throttled progress messages
+  // directly without a messaging layer).
+  const progressListeners = [];
+
+  /**
+   * @param {(payload: {type: string, done: number, total: number, replaced: number, skipped: number}) => void} callback
+   * @returns {() => void} unsubscribe function
+   */
+  function onProgress(callback) {
+    progressListeners.push(callback);
+    return () => {
+      const idx = progressListeners.indexOf(callback);
+      if (idx !== -1) {
+        progressListeners.splice(idx, 1);
+      }
+    };
+  }
+
+  /**
+   * Broadcast a progress message: to any registered `onProgress` listeners
+   * (always - used by tests and available to any in-page consumer), and, in
+   * the real extension, to any listening extension page (the popup) via
+   * `browser.runtime.sendMessage`. Fire-and-forget - if no popup is open to
+   * receive it, Firefox rejects with a "no receiver" error, which is
+   * expected and ignored.
+   * @param {{done: number, total: number, replaced: number, skipped: number}} payload
+   */
+  function postProgress(payload) {
+    const message = {
+      type: "progress",
+      done: payload.done,
+      total: payload.total,
+      replaced: payload.replaced,
+      skipped: payload.skipped,
+    };
+    for (let i = 0; i < progressListeners.length; i++) {
+      try {
+        progressListeners[i](message);
+      } catch (error) {
+        // A misbehaving listener must never break the replace loop itself.
+        console.warn("Form Field Find & Replace: progress listener threw", error);
+      }
+    }
+    if (
+      typeof browser !== "undefined" &&
+      browser.runtime &&
+      typeof browser.runtime.sendMessage === "function"
+    ) {
+      const result = browser.runtime.sendMessage(message);
+      if (result && typeof result.catch === "function") {
+        result.catch(() => {
+          // No popup open to receive it - expected and harmless.
+        });
+      }
+    }
+  }
+
+  /** Yield one turn of the event loop, per SPEC.md's chunk-and-yield
+   * guidance - this is what keeps the page from locking up on a large run
+   * and is the only place cancellation actually gets a chance to land
+   * between two fields being processed. */
+  function yieldToEventLoop() {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  /**
+   * High-resolution timestamp source used for the per-field catastrophic-
+   * backtracking budget and the run's total wall-clock time. `performance`
+   * is available in every context this file runs in (real page, popup,
+   * Playwright's browser-based test harness).
+   * @returns {number}
+   */
+  function now() {
+    return typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
+  }
+
   // ---- Replacement --------------------------------------------------------
 
   /**
@@ -662,19 +858,91 @@
   }
 
   /**
-   * Handle the "replace" action: collect fields, apply field-type
-   * filtering, build the SAME shared matcher used by handleCount, and
-   * mutate only the fields that actually match. Fields with zero matches
-   * are never touched - no setter call, no events.
-   * @param {{find: string, replace: string, options: object, fieldTypes: object}} message
-   * @returns {{ok: boolean, matches: number, fields: number, replaced: number, skipped: number, error: string|null}}
+   * Process a single field: match-count it, and if it has at least one
+   * match, mutate it via the appropriate kind-specific path. Wrapped in a
+   * time budget (FIELD_TIME_BUDGET_MS) - see that constant's comment for
+   * exactly what "abort" can and cannot mean for a synchronous regex call.
+   * The regex passed in is the ONE shared instance built once outside the
+   * whole loop; `lastIndex` is reset here before each use since a `/g/`
+   * regex is stateful and would otherwise skip matches on the next field
+   * that reuses it.
+   * @param {{el: Element, kind: string, type: string, originalValue: string}} field
+   * @param {RegExp} regex
+   * @param {string} effectiveReplace
+   * @returns {{matched: boolean, matchCount: number, replaced: boolean, skippedReason: string|null, timedOut: boolean}}
    */
-  function handleReplace(message) {
+  function processField(field, regex, effectiveReplace) {
+    const fieldStart = now();
+
+    const value = field.kind === "contenteditable" ? field.el.textContent : field.el.value;
+    regex.lastIndex = 0;
+    const n = countMatches(regex, value || "");
+
+    if (now() - fieldStart > FIELD_TIME_BUDGET_MS) {
+      return { matched: false, matchCount: 0, replaced: false, skippedReason: null, timedOut: true };
+    }
+
+    if (n === 0) {
+      // No match: never touch this field - no setter call, no events.
+      return { matched: false, matchCount: 0, replaced: false, skippedReason: null, timedOut: false };
+    }
+
+    let result;
+    if (field.kind === "contenteditable") {
+      regex.lastIndex = 0;
+      const changed = replaceContentEditableTextNodes(field.el, regex, effectiveReplace);
+      result = { replaced: changed, skippedReason: null };
+    } else {
+      regex.lastIndex = 0;
+      result = replaceInputField(field, regex, effectiveReplace);
+    }
+
+    if (now() - fieldStart > FIELD_TIME_BUDGET_MS) {
+      // The mutation (if any) already ran to completion synchronously and
+      // cannot be un-executed mid-flight - see FIELD_TIME_BUDGET_MS's
+      // comment. Report it as timed out rather than a normal
+      // replaced/skipped outcome, and keep it out of the undo snapshot.
+      return { matched: true, matchCount: n, replaced: false, skippedReason: null, timedOut: true };
+    }
+
+    return { matched: true, matchCount: n, replaced: result.replaced, skippedReason: result.skippedReason, timedOut: false };
+  }
+
+  /**
+   * Handle the "replace" action: collect fields once, apply field-type
+   * filtering, build the SAME shared matcher used by handleCount ONCE
+   * outside the loop, and mutate only the fields that actually match.
+   * Fields with zero matches are never touched - no setter call, no events.
+   *
+   * Phase 5: processes `filtered` with a single plain indexed `for` loop
+   * (no Array.prototype.map/recursion over the field list), chunked into
+   * CHUNK_SIZE batches with an event-loop yield between chunks so the page
+   * stays responsive and `cancelled` gets a chance to take effect; posts
+   * throttled progress messages; builds the capped, flat undo snapshot in
+   * the same pass; and reports timedOut fields and total wall-clock time.
+   * @param {{find: string, replace: string, options: object, fieldTypes: object}} message
+   * @returns {Promise<{ok: boolean, matches: number|null, fields: number|null, replaced: number, skipped: number, timedOut: number, cancelled: boolean, total: number, done: number, undoAvailable: boolean, wallMs: number, error: string|null}>}
+   */
+  async function handleReplace(message) {
+    const startTime = now();
     const replaceStr = typeof message.replace === "string" ? message.replace : "";
     const options = message.options || {};
 
     if (message.find === "") {
-      return { ok: true, matches: 0, fields: 0, replaced: 0, skipped: 0, error: null };
+      return {
+        ok: true,
+        matches: 0,
+        fields: 0,
+        replaced: 0,
+        skipped: 0,
+        timedOut: 0,
+        cancelled: false,
+        total: 0,
+        done: 0,
+        undoAvailable: true,
+        wallMs: now() - startTime,
+        error: null,
+      };
     }
 
     const { regex, error } = buildMatcher(message.find, options);
@@ -685,6 +953,12 @@
         fields: 0,
         replaced: 0,
         skipped: 0,
+        timedOut: 0,
+        cancelled: false,
+        total: 0,
+        done: 0,
+        undoAvailable: true,
+        wallMs: now() - startTime,
         error,
         code: "invalid-regex",
       };
@@ -703,6 +977,12 @@
           fields: null,
           replaced: 0,
           skipped: 0,
+          timedOut: 0,
+          cancelled: false,
+          total: 0,
+          done: 0,
+          undoAvailable: true,
+          wallMs: now() - startTime,
           error: validation.error,
           code: "backreference-mismatch",
         };
@@ -718,42 +998,80 @@
       ? replaceStr
       : escapeDollarForReplace(replaceStr);
 
+    // Collect once into a flat array - the ONE DOM walk for this whole run.
     const collected = Array.from(collectFields(document));
     const filtered = filterByTypes(collected, message.fieldTypes);
+    const total = filtered.length;
+
+    cancelled = false;
+
+    // Up-front undo-cap decision, from the total collected field count (a
+    // safe upper bound on how many fields could possibly need an undo
+    // entry) - NOT a second DOM walk, just a length check on the array
+    // already built above. The popup separately gets this same number via
+    // handleCount's `totalFields` so it can warn the user before Replace
+    // all is even clicked; this is the run's own authoritative decision.
+    const undoEnabledForRun = total <= undoSnapshotCap;
+    const undoSnapshot = undoEnabledForRun ? [] : null;
 
     let totalMatches = 0;
     let fieldsWithMatches = 0;
     let replaced = 0;
     let skipped = 0;
+    let timedOut = 0;
+    let done = 0;
+    let lastProgressPostTime = 0;
+    let wasCancelled = false;
 
-    for (let i = 0; i < filtered.length; i++) {
-      const field = filtered[i];
-      const value = field.kind === "contenteditable" ? field.el.textContent : field.el.value;
-      const n = countMatches(regex, value || "");
-      if (n === 0) {
-        // No match: never touch this field - no setter call, no events.
-        continue;
+    // Outer loop only exists to carve the work into CHUNK_SIZE batches for
+    // cancellation checks and event-loop yields - the actual field
+    // processing below is still one continuous, plain indexed `for` loop
+    // over `filtered` (no Array.prototype.map, no recursion).
+    for (let chunkStart = 0; chunkStart < total; chunkStart += CHUNK_SIZE) {
+      if (cancelled) {
+        wasCancelled = true;
+        break;
       }
 
-      totalMatches += n;
-      fieldsWithMatches++;
+      const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, total);
 
-      if (field.kind === "contenteditable") {
-        regex.lastIndex = 0;
-        const changed = replaceContentEditableTextNodes(field.el, regex, effectiveReplace);
-        if (changed) {
-          replaced++;
+      for (let i = chunkStart; i < chunkEnd; i++) {
+        const field = filtered[i];
+        const result = processField(field, regex, effectiveReplace);
+
+        if (result.timedOut) {
+          timedOut++;
+        } else if (result.matched) {
+          totalMatches += result.matchCount;
+          fieldsWithMatches++;
+
+          if (result.replaced) {
+            replaced++;
+            if (undoEnabledForRun && undoSnapshot.length < undoSnapshotCap) {
+              undoSnapshot.push({ el: field.el, value: field.originalValue });
+            }
+          } else if (result.skippedReason) {
+            skipped++;
+          }
         }
-      } else {
-        regex.lastIndex = 0;
-        const result = replaceInputField(field, regex, effectiveReplace);
-        if (result.replaced) {
-          replaced++;
-        } else if (result.skippedReason) {
-          skipped++;
-        }
+
+        done++;
+      }
+
+      const nowMs = now();
+      const isLastChunk = chunkEnd >= total;
+      if (isLastChunk || nowMs - lastProgressPostTime >= PROGRESS_THROTTLE_MS) {
+        postProgress({ done, total, replaced, skipped });
+        lastProgressPostTime = nowMs;
+      }
+
+      if (!isLastChunk) {
+        await yieldToEventLoop();
       }
     }
+
+    lastUndoSnapshot = undoSnapshot || [];
+    lastUndoAvailable = undoEnabledForRun;
 
     return {
       ok: true,
@@ -761,6 +1079,12 @@
       fields: fieldsWithMatches,
       replaced,
       skipped,
+      timedOut,
+      cancelled: wasCancelled,
+      total,
+      done,
+      undoAvailable: undoEnabledForRun,
+      wallMs: now() - startTime,
       error: null,
     };
   }
@@ -798,21 +1122,31 @@
   /**
    * Handle the "count" action: collect fields, apply field-type filtering,
    * build the shared matcher, and count matches - no mutation.
+   *
+   * Also reports `totalFields` - the full collected+filtered field count
+   * regardless of whether any of them match - independent of `fields`
+   * (which counts only fields WITH a match). This is what the popup uses to
+   * warn about the undo-snapshot cap (phase 5, SPEC.md "Undo at scale")
+   * BEFORE Replace all is ever clicked: a preflight "count" call happens
+   * first, `totalFields` is compared against the same 50,000 cap
+   * handleReplace itself enforces, and the warning (if any) is shown before
+   * any field on the page is touched.
    * @param {{find: string, options: object, fieldTypes: object}} message
-   * @returns {{ok: boolean, matches: number, fields: number, error: string|null}}
+   * @returns {{ok: boolean, matches: number, fields: number, totalFields: number, error: string|null}}
    */
   function handleCount(message) {
+    const collected = Array.from(collectFields(document));
+    const filtered = filterByTypes(collected, message.fieldTypes);
+    const totalFields = filtered.length;
+
     if (message.find === "") {
-      return { ok: true, matches: 0, fields: 0, error: null };
+      return { ok: true, matches: 0, fields: 0, totalFields, error: null };
     }
 
     const { regex, error } = buildMatcher(message.find, message.options);
     if (error) {
-      return { ok: false, matches: 0, fields: 0, error };
+      return { ok: false, matches: 0, fields: 0, totalFields, error };
     }
-
-    const collected = Array.from(collectFields(document));
-    const filtered = filterByTypes(collected, message.fieldTypes);
 
     let totalMatches = 0;
     let fieldsWithMatches = 0;
@@ -825,7 +1159,7 @@
       }
     }
 
-    return { ok: true, matches: totalMatches, fields: fieldsWithMatches, error: null };
+    return { ok: true, matches: totalMatches, fields: fieldsWithMatches, totalFields, error: null };
   }
 
   // Guard the real listener registration behind an extension-API check so
@@ -883,10 +1217,15 @@
       }
 
       if (message.action === "replace") {
-        return Promise.resolve(handleReplace(message));
+        return handleReplace(message);
       }
 
-      // undo/cancel are implemented in later phases.
+      if (message.action === "cancel") {
+        requestCancel();
+        return Promise.resolve({ ok: true });
+      }
+
+      // undo is implemented in phase 7.
       return undefined;
     });
   }
@@ -920,6 +1259,23 @@
       // Registration guard, exposed so the extension-page case is testable
       // without an actual moz-extension:// document.
       shouldRegisterMessageListener,
+      // Phase 5 additions: chunking/progress/cancel/scale constants and
+      // hooks, exposed for direct test access (no `browser` global exists
+      // in the Playwright fixture pages this file is injected into).
+      CHUNK_SIZE,
+      PROGRESS_THROTTLE_MS,
+      FIELD_TIME_BUDGET_MS,
+      DEFAULT_UNDO_SNAPSHOT_CAP,
+      onProgress,
+      requestCancel,
+      getUndoSnapshotLength,
+      setUndoSnapshotCapForTesting,
+      resetUndoSnapshotCapForTesting,
+      // Exposed so the catastrophic-backtracking guard can be exercised
+      // deterministically with a fake, controllably-slow "regex" object
+      // instead of a genuinely pathological pattern (whose real timing is
+      // inherently machine-dependent and unsuitable for a CI test).
+      processField,
     };
   }
 })();

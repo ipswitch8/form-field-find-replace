@@ -111,7 +111,7 @@ test.describe("replace path (phase 3)", () => {
   }) => {
     await loadFixtureWithContentScript(page, FIXTURE_PATH);
 
-    const eventCounts = await page.evaluate((fieldTypes) => {
+    const eventCounts = await page.evaluate(async (fieldTypes) => {
       const el = document.getElementById("number-input");
       const counts = { input: 0, change: 0 };
       el.addEventListener("input", () => counts.input++);
@@ -119,7 +119,7 @@ test.describe("replace path (phase 3)", () => {
 
       const valueBefore = el.value;
 
-      const response = window.__ffr.handleReplace({
+      const response = await window.__ffr.handleReplace({
         action: "replace",
         find: "this-string-does-not-appear-anywhere",
         replace: "x",
@@ -147,7 +147,7 @@ test.describe("replace path (phase 3)", () => {
   }) => {
     await loadFixtureWithContentScript(page, FIXTURE_PATH);
 
-    const result = await page.evaluate((fieldTypes) => {
+    const result = await page.evaluate(async (fieldTypes) => {
       const countResponse = window.__ffr.handleCount({
         action: "count",
         find: "hello",
@@ -157,7 +157,7 @@ test.describe("replace path (phase 3)", () => {
       // A no-op replace (replacement identical to the match) exercises the
       // exact same matcher/count logic on the replace path without
       // mutating anything meaningful.
-      const replaceResponse = window.__ffr.handleReplace({
+      const replaceResponse = await window.__ffr.handleReplace({
         action: "replace",
         find: "hello",
         replace: "hello",

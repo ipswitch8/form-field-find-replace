@@ -42,14 +42,14 @@ test.describe("phase 4: literal-dollar escaping in plain mode", () => {
   }) => {
     await loadFixtureWithContentScript(page, FIXTURE_PATH);
 
-    const result = await page.evaluate((fieldTypes) => {
+    const result = await page.evaluate(async (fieldTypes) => {
       const el = document.createElement("input");
       el.type = "text";
       el.id = "dollar-test-input";
       el.value = "The old price was TBD.";
       document.body.appendChild(el);
 
-      const response = window.__ffr.handleReplace({
+      const response = await window.__ffr.handleReplace({
         action: "replace",
         find: "TBD",
         replace: "$5.00",
@@ -73,14 +73,14 @@ test.describe("phase 4: literal-dollar escaping in plain mode", () => {
     // If "$" were not escaped to "$$" before being handed to
     // String.prototype.replace, "$&" here would be silently reinterpreted
     // as "insert the whole match" (i.e. "TBD"), not kept as literal text.
-    const result = await page.evaluate((fieldTypes) => {
+    const result = await page.evaluate(async (fieldTypes) => {
       const el = document.createElement("input");
       el.type = "text";
       el.id = "dollar-amp-test-input";
       el.value = "The old price was TBD.";
       document.body.appendChild(el);
 
-      const response = window.__ffr.handleReplace({
+      const response = await window.__ffr.handleReplace({
         action: "replace",
         find: "TBD",
         replace: "cost is $&, literally",
@@ -100,14 +100,14 @@ test.describe("phase 4: full substitution grammar in regex mode", () => {
   test("supports numbered capture groups ($1, $2, ...)", async ({ page }) => {
     await loadFixtureWithContentScript(page, FIXTURE_PATH);
 
-    const result = await page.evaluate((fieldTypes) => {
+    const result = await page.evaluate(async (fieldTypes) => {
       const el = document.createElement("input");
       el.type = "text";
       el.id = "numbered-group-test-input";
       el.value = "foobar";
       document.body.appendChild(el);
 
-      const response = window.__ffr.handleReplace({
+      const response = await window.__ffr.handleReplace({
         action: "replace",
         find: "(foo)(bar)",
         replace: "$2-$1",
@@ -127,14 +127,14 @@ test.describe("phase 4: full substitution grammar in regex mode", () => {
   }) => {
     await loadFixtureWithContentScript(page, FIXTURE_PATH);
 
-    const result = await page.evaluate((fieldTypes) => {
+    const result = await page.evaluate(async (fieldTypes) => {
       const el = document.createElement("input");
       el.type = "text";
       el.id = "named-group-test-input";
       el.value = "hello world";
       document.body.appendChild(el);
 
-      const response = window.__ffr.handleReplace({
+      const response = await window.__ffr.handleReplace({
         action: "replace",
         find: "(?<word>hello)",
         replace: "[$<word>]",
@@ -152,14 +152,14 @@ test.describe("phase 4: full substitution grammar in regex mode", () => {
   test("supports $& (whole match)", async ({ page }) => {
     await loadFixtureWithContentScript(page, FIXTURE_PATH);
 
-    const result = await page.evaluate((fieldTypes) => {
+    const result = await page.evaluate(async (fieldTypes) => {
       const el = document.createElement("input");
       el.type = "text";
       el.id = "amp-test-input";
       el.value = "hello world";
       document.body.appendChild(el);
 
-      const response = window.__ffr.handleReplace({
+      const response = await window.__ffr.handleReplace({
         action: "replace",
         find: "world",
         replace: "<$&>",
@@ -177,14 +177,14 @@ test.describe("phase 4: full substitution grammar in regex mode", () => {
   test("supports $` (text before the match)", async ({ page }) => {
     await loadFixtureWithContentScript(page, FIXTURE_PATH);
 
-    const result = await page.evaluate((fieldTypes) => {
+    const result = await page.evaluate(async (fieldTypes) => {
       const el = document.createElement("input");
       el.type = "text";
       el.id = "backtick-test-input";
       el.value = "hello world";
       document.body.appendChild(el);
 
-      const response = window.__ffr.handleReplace({
+      const response = await window.__ffr.handleReplace({
         action: "replace",
         find: "world",
         replace: "$`",
@@ -202,14 +202,14 @@ test.describe("phase 4: full substitution grammar in regex mode", () => {
   test("supports $' (text after the match)", async ({ page }) => {
     await loadFixtureWithContentScript(page, FIXTURE_PATH);
 
-    const result = await page.evaluate((fieldTypes) => {
+    const result = await page.evaluate(async (fieldTypes) => {
       const el = document.createElement("input");
       el.type = "text";
       el.id = "quote-test-input";
       el.value = "hello world!";
       document.body.appendChild(el);
 
-      const response = window.__ffr.handleReplace({
+      const response = await window.__ffr.handleReplace({
         action: "replace",
         find: "world",
         replace: "$'",
@@ -227,14 +227,14 @@ test.describe("phase 4: full substitution grammar in regex mode", () => {
   test("supports $$ (literal dollar sign)", async ({ page }) => {
     await loadFixtureWithContentScript(page, FIXTURE_PATH);
 
-    const result = await page.evaluate((fieldTypes) => {
+    const result = await page.evaluate(async (fieldTypes) => {
       const el = document.createElement("input");
       el.type = "text";
       el.id = "double-dollar-test-input";
       el.value = "hello world";
       document.body.appendChild(el);
 
-      const response = window.__ffr.handleReplace({
+      const response = await window.__ffr.handleReplace({
         action: "replace",
         find: "world",
         replace: "$$5",
@@ -256,14 +256,14 @@ test.describe("phase 4: backreference validation blocks the replace run", () => 
   }) => {
     await loadFixtureWithContentScript(page, FIXTURE_PATH);
 
-    const result = await page.evaluate((fieldTypes) => {
+    const result = await page.evaluate(async (fieldTypes) => {
       const el = document.createElement("input");
       el.type = "text";
       el.id = "valid-backref-test-input";
       el.value = "hello";
       document.body.appendChild(el);
 
-      const response = window.__ffr.handleReplace({
+      const response = await window.__ffr.handleReplace({
         action: "replace",
         find: "(hello)",
         replace: "$1$1",
@@ -284,7 +284,7 @@ test.describe("phase 4: backreference validation blocks the replace run", () => 
   }) => {
     await loadFixtureWithContentScript(page, FIXTURE_PATH);
 
-    const result = await page.evaluate((fieldTypes) => {
+    const result = await page.evaluate(async (fieldTypes) => {
       const fields = Array.from(window.__ffr.collectFields(document));
       let eventCount = 0;
       for (const f of fields) {
@@ -302,7 +302,7 @@ test.describe("phase 4: backreference validation blocks the replace run", () => 
       // "hello" appears in several fixture fields (text-input, email-input,
       // textarea-input, contenteditable-div) - if the replace loop below
       // ran at all, at least one of those would be mutated and fire events.
-      const response = window.__ffr.handleReplace({
+      const response = await window.__ffr.handleReplace({
         action: "replace",
         find: "(hello)",
         replace: "$2",
@@ -336,14 +336,14 @@ test.describe("phase 4: backreference validation blocks the replace run", () => 
   }) => {
     await loadFixtureWithContentScript(page, FIXTURE_PATH);
 
-    const result = await page.evaluate((fieldTypes) => {
+    const result = await page.evaluate(async (fieldTypes) => {
       const el = document.createElement("input");
       el.type = "text";
       el.id = "bad-named-backref-test-input";
       const before = el.value;
       document.body.appendChild(el);
 
-      const response = window.__ffr.handleReplace({
+      const response = await window.__ffr.handleReplace({
         action: "replace",
         find: "(?<word>hello)",
         replace: "[$<missingName>]",

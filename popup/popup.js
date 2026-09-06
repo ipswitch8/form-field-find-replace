@@ -13,6 +13,18 @@
  * validation and the group-mismatch warning live in that same shared file
  * and surface here via the normal response.error path in handleReplaceAll.
  *
+ * Phase 5 scope: renders the chunked replace run's progress (a
+ * `browser.runtime.onMessage` listener for `{type:"progress",...}`
+ * broadcasts from the content script - see registerProgressListener
+ * below), and runs an undo-cap preflight BEFORE a replace run starts: it
+ * sends a lightweight "count" message first, reads back `totalFields`
+ * (content/find-replace.js's handleCount reports the full collected field
+ * count regardless of match, independent of the match-only `fields`
+ * count), and if that exceeds the undo-snapshot cap it shows a dedicated,
+ * automation-friendly warning (#undo-warning) BEFORE the mutating
+ * "replace" message is ever sent - i.e. before any field on the page is
+ * touched, not merely before the Undo button is pressed afterward.
+ *
  * Vanilla JS only. No frameworks, no build step, no eval/new Function.
  * No network calls, no telemetry, no analytics.
  */
@@ -69,7 +81,16 @@ const els = {
   progressBar: document.getElementById("progress-bar"),
   fieldCounter: document.getElementById("field-counter"),
   matchPreview: document.getElementById("match-preview"),
+  undoWarning: document.getElementById("undo-warning"),
 };
+
+// Must match content/find-replace.js's DEFAULT_UNDO_SNAPSHOT_CAP. Read it
+// directly off window.__ffr (popup.html loads content/find-replace.js
+// ahead of this file for the live-preview matcher reuse, so the same
+// constant is available here too) rather than hardcoding a second copy
+// that could silently drift out of sync.
+const UNDO_SNAPSHOT_CAP =
+  (window.__ffr && window.__ffr.DEFAULT_UNDO_SNAPSHOT_CAP) || 50000;
 
 const fieldTypeCheckboxes = Array.from(
   document.querySelectorAll(".field-type-checkbox")
@@ -272,6 +293,51 @@ function updateButtonStates() {
   els.replaceAllBtn.disabled = runInFlight;
 }
 
+/**
+ * Show or hide the dedicated undo-cap warning element. Kept distinct from
+ * the general status line so it's independently testable/automatable and
+ * so it doesn't get silently overwritten by the next "Replacing..."/
+ * "Counting..." status update.
+ * @param {string|null} message
+ */
+function setUndoWarning(message) {
+  if (!els.undoWarning) {
+    return;
+  }
+  if (!message) {
+    els.undoWarning.textContent = "";
+    els.undoWarning.hidden = true;
+    return;
+  }
+  els.undoWarning.textContent = message;
+  els.undoWarning.hidden = false;
+}
+
+/**
+ * Listen for `{type: "progress", done, total, replaced, skipped}` messages
+ * broadcast by the content script's chunked replace loop (phase 5) and
+ * render them into the existing progress bar / field counter. Registered
+ * once at init; harmless if no run is ever in flight (nothing is ever sent
+ * in that case).
+ */
+function registerProgressListener() {
+  if (
+    typeof browser === "undefined" ||
+    !browser.runtime ||
+    !browser.runtime.onMessage ||
+    typeof browser.runtime.onMessage.addListener !== "function"
+  ) {
+    return;
+  }
+  browser.runtime.onMessage.addListener((message) => {
+    if (!message || message.type !== "progress") {
+      return undefined;
+    }
+    setProgress(message.done ?? 0, message.total ?? 0);
+    return undefined;
+  });
+}
+
 // ---- Messaging (stubs until content/find-replace.js exists) -----------
 
 /**
@@ -354,6 +420,26 @@ async function handleCount() {
 }
 
 async function handleReplaceAll() {
+  // Preflight (phase 5, SPEC.md "Undo at scale"): find out whether undo
+  // will be disabled for this run BEFORE any field is touched, not after.
+  // A lightweight "count" message reports `totalFields` - the full
+  // collected+filtered field count regardless of match - independent of
+  // the "Count matches" button's own status text below.
+  setUndoWarning(null);
+  const preflight = await sendToContentScript("count");
+  if (
+    preflight &&
+    !preflight.error &&
+    typeof preflight.totalFields === "number" &&
+    preflight.totalFields > UNDO_SNAPSHOT_CAP
+  ) {
+    setUndoWarning(
+      `Warning: ${preflight.totalFields} fields were found, which exceeds the ` +
+        `${UNDO_SNAPSHOT_CAP.toLocaleString()}-entry undo limit. Undo will be ` +
+        `disabled for this run.`
+    );
+  }
+
   runInFlight = true;
   updateButtonStates();
   setStatus("Replacing...");
@@ -372,15 +458,26 @@ async function handleReplaceAll() {
     return;
   }
 
-  if ((response.replaced ?? 0) > 0) {
+  setProgress(response.done ?? response.total ?? 0, response.total ?? 0);
+
+  if ((response.replaced ?? 0) > 0 && response.undoAvailable !== false) {
     hasUndoableChange = true;
   }
   updateButtonStates();
 
-  setStatus(
-    `Replaced ${response.replaced ?? 0} of ${response.fields ?? 0} fields` +
-      (response.skipped ? `, ${response.skipped} skipped` : "")
-  );
+  const wallMs = Math.round(response.wallMs ?? 0);
+  const parts = [
+    response.cancelled
+      ? `Cancelled - replaced ${response.replaced ?? 0} of ${response.total ?? 0} fields`
+      : `Replaced ${response.replaced ?? 0} of ${response.fields ?? 0} fields`,
+  ];
+  if (response.skipped) {
+    parts.push(`${response.skipped} skipped`);
+  }
+  if (response.timedOut) {
+    parts.push(`${response.timedOut} timed out`);
+  }
+  setStatus(`${parts.join(", ")} (${wallMs}ms)`);
 }
 
 async function handleUndo() {
@@ -490,6 +587,7 @@ function wireEvents() {
 async function init() {
   await restoreState();
   wireEvents();
+  registerProgressListener();
   updateButtonStates();
   setProgress(0, 0);
   updatePreview();
