@@ -7,3 +7,4 @@ web-ext-artifacts/
 *~
 __pycache__/
 *.pyc
+.claude/pipelines/*/hook-heartbeat
