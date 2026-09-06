@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <!--
-  Form Field Find & Replace - test fixture (phase 2 + phase 3).
+  Form Field Find & Replace - test fixture (phase 2 + phase 3 + phase 6).
 
   Expected counts, computed against content/find-replace.js's collectFields
   + describeField rules:
 
-    Non-skipped fields collected by collectFields(document) with NO
-    field-type filtering applied: 11
+    Non-skipped fields collected by collectFields(document) - i.e. with NO
+    `includeIframes` option set - with NO field-type filtering applied: 12
       - #text-input           (kind: input,  type: text)
       - #email-input          (kind: input,  type: email)
       - #textarea-input       (kind: textarea, type: textarea)
@@ -18,6 +18,29 @@
       - #week-input           (kind: input,  type: week)
       - #time-input           (kind: input,  type: time)
       - #controlled-input     (kind: input,  type: text)
+      - #shadow-input         (kind: input,  type: text) - inside an OPEN
+        shadow root; collected unconditionally (shadow-root recursion does
+        NOT depend on the includeIframes option), see phase 6.
+
+    Additionally collected ONLY when collectFields(document, {includeIframes:
+    true}) is called (phase 6):
+      - #iframe-input (kind: input, type: text) - inside #same-origin-iframe,
+        a same-origin (srcdoc) iframe.
+
+    NEVER collected, by design (phase 6):
+      - #closed-shadow-input - inside a CLOSED shadow root attached to
+        #closed-shadow-host. `Element.shadowRoot` is null for a closed root,
+        so it is genuinely unreachable, not merely filtered - proves closed
+        shadow roots are skipped without error.
+      - anything inside #cross-origin-iframe - a `sandbox`-ed iframe with no
+        `allow-same-origin` token, which forces its content into an OPAQUE
+        origin distinct from the parent document regardless of `src`. This
+        is the offline-friendly mechanism used here (see that iframe's own
+        comment below) to reliably produce the same "cannot access
+        contentDocument" condition a genuinely cross-origin frame would -
+        without any network access. Accessing it must never throw out of
+        collectFields and must never abort collection of the rest of the
+        tree.
 
     Always-skipped (must NOT appear in collectFields output):
       - #password-input  (type="password")
@@ -40,7 +63,11 @@
     that do NOT contain "hello", so the "hello" match-count assertions
     above are unaffected by their addition - they exist to exercise the
     replace path's native-setter and format-validation-rollback behavior
-    instead (see test/find-replace.spec.js).
+    instead (see test/find-replace.spec.js). The phase 6 shadow/iframe
+    fields below are likewise prefilled with values that do NOT contain
+    "hello", for the same reason - each carries its own distinct seed value
+    ("shadow value" / "iframe value") so shadow/iframe-specific tests can
+    target them without disturbing any existing "hello" assertion.
 -->
 <html lang="en">
 <head>
@@ -222,5 +249,100 @@
       });
     })();
   </script>
+
+  <!--
+    Phase 6: a field inside an OPEN shadow root. Built with
+    createElement/setAttribute rather than shadow.innerHTML, purely as
+    fixture-authoring style (innerHTML itself is not a phase-6 concern -
+    this file is a test fixture, not extension code, and is not in
+    security-audit.sh's popup/content scan scope).
+
+    collectFields must recurse into `#shadow-host.shadowRoot` (open) and
+    find #shadow-input, proving shadow-root recursion works independent of
+    the includeIframes option (it is not gated by it at all).
+  -->
+  <div id="shadow-host" data-testid="shadow-host"></div>
+  <script>
+    (function () {
+      var host = document.getElementById("shadow-host");
+      var shadow = host.attachShadow({ mode: "open" });
+      var input = document.createElement("input");
+      input.type = "text";
+      input.id = "shadow-input";
+      input.setAttribute("data-testid", "shadow-input");
+      input.value = "shadow value";
+      shadow.appendChild(input);
+
+      // Phase 6 regression guard: the password-exclusion rule must hold
+      // INSIDE a shadow root too, not just at top level. describeField is
+      // applied uniformly by the single collectFields generator, but nothing
+      // proved that until this field existed - a future refactor that
+      // special-cased shadow traversal could silently start collecting it.
+      var secret = document.createElement("input");
+      secret.type = "password";
+      secret.id = "shadow-password-input";
+      secret.setAttribute("data-testid", "shadow-password-input");
+      secret.value = "hello shadow secret";
+      shadow.appendChild(secret);
+    })();
+  </script>
+
+  <!--
+    Phase 6: a field inside a CLOSED shadow root. `attachShadow({mode:
+    "closed"})` makes `host.shadowRoot` return null from outside the shadow
+    tree - collectFields must never see #closed-shadow-input, and must never
+    throw trying to reach it (there is no API to "force" access to a closed
+    root; it is simply absent).
+  -->
+  <div id="closed-shadow-host" data-testid="closed-shadow-host"></div>
+  <script>
+    (function () {
+      var host = document.getElementById("closed-shadow-host");
+      var shadow = host.attachShadow({ mode: "closed" });
+      var input = document.createElement("input");
+      input.type = "text";
+      input.id = "closed-shadow-input";
+      input.setAttribute("data-testid", "closed-shadow-input");
+      input.value = "closed shadow value";
+      shadow.appendChild(input);
+    })();
+  </script>
+
+  <!--
+    Phase 6: a same-origin iframe containing its own form field. `srcdoc`
+    content inherits the parent document's origin (per the HTML spec's
+    "iframe srcdoc document" rules), so this is genuinely same-origin and
+    `contentDocument` is synchronously accessible from the parent once the
+    iframe has fired its `load` event - tests must wait for that event
+    before calling collectFields with includeIframes enabled. Collected only
+    when the popup's "include iframes" option (options.includeIframes) is
+    set; must be absent from a collectFields(document) call with no options.
+  -->
+  <iframe
+    id="same-origin-iframe"
+    data-testid="same-origin-iframe"
+    srcdoc="&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;body&gt;&lt;input type=&quot;text&quot; id=&quot;iframe-input&quot; data-testid=&quot;iframe-input&quot; value=&quot;iframe value&quot; /&gt;&lt;input type=&quot;password&quot; id=&quot;iframe-password-input&quot; data-testid=&quot;iframe-password-input&quot; value=&quot;hello iframe secret&quot; /&gt;&lt;/body&gt;&lt;/html&gt;"
+  ></iframe>
+
+  <!--
+    Phase 6: a cross-origin-EQUIVALENT iframe, offline-friendly. A `src`
+    pointing at a real external origin (e.g. https://example.com/) would not
+    load without network access and this project makes no network calls
+    (SPEC.md). Empirically, in this project's Firefox/Playwright harness, a
+    `sandbox` attribute with NO `allow-same-origin` token forces the frame's
+    content into a freshly-generated OPAQUE origin distinct from the parent
+    regardless of `src` (even `about:blank` or a same-document srcdoc) - the
+    exact mechanism the HTML spec uses for "an iframe whose content must be
+    treated as cross-origin". Reading `.contentDocument` on it is exactly
+    the case collectFields's try/catch must swallow quietly. No `src` is
+    needed to prove this; the sandbox restriction alone is sufficient and
+    keeps this fixture fully offline.
+  -->
+  <iframe
+    id="cross-origin-iframe"
+    data-testid="cross-origin-iframe"
+    sandbox=""
+    srcdoc="&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;body&gt;&lt;input type=&quot;text&quot; id=&quot;cross-origin-input&quot; value=&quot;should never be collected&quot; /&gt;&lt;/body&gt;&lt;/html&gt;"
+  ></iframe>
 </body>
 </html>

@@ -30,8 +30,25 @@
  * of every chunk, posts throttled `{type:"progress",...}` messages, guards
  * against catastrophic-backtracking regexes on a per-field time budget, and
  * builds the undo snapshot array (flat, capped, phase-7 wires the actual
- * Undo button/action to it). Shadow DOM/iframe recursion (phase 6) remains
- * out of scope here.
+ * Undo button/action to it).
+ *
+ * Phase 6 scope: generalizing collectFields(root) into the single generator
+ * that also recurses into every open shadowRoot encountered while walking
+ * the tree, and - only when the popup's "include iframes" option is on -
+ * into same-origin iframe documents. There is exactly ONE walk
+ * implementation: shadow roots and iframe documents are both handled by the
+ * same generator recursing into itself via `yield*`, never a second,
+ * duplicated walker. Closed shadow roots are genuinely unreachable
+ * (`Element.shadowRoot` is null for a closed root) and are skipped without
+ * any special-casing. Iframe access is wrapped in try/catch so a
+ * cross-origin frame (SecurityError, or simply a null contentDocument,
+ * depending on the engine) is skipped quietly - no error is thrown or
+ * surfaced to the popup, and the run continues collecting every other
+ * field. Because an iframe's elements belong to a DIFFERENT document (and
+ * therefore a different `window`/realm), classification and value-setting
+ * can no longer rely on `instanceof HTMLInputElement` against the TOP
+ * window's constructor - see isTextareaElement/isInputElement/
+ * getOwnerWindow below and their use in describeField/setNativeValue.
  *
  * Testability: Playwright cannot easily load a Firefox extension, so tests
  * inject this file into a fixture page directly via addScriptTag/evaluate.
@@ -107,6 +124,46 @@
   }
 
   /**
+   * The `window` (realm) an element actually belongs to, via its OWN
+   * ownerDocument.defaultView - never assume the top window. An element
+   * collected from a same-origin iframe's document has a different
+   * ownerDocument/defaultView than elements in the top page, so
+   * `el instanceof HTMLInputElement` checked against the TOP window's
+   * HTMLInputElement constructor is FALSE for it even though it genuinely
+   * is an <input>. Every classification/native-setter check below goes
+   * through this helper (or the tagName-based checks next to it) instead of
+   * a bare `instanceof` against a module-scope constructor, so the same
+   * logic is correct for the document, for elements inside an open shadow
+   * root (same window, so this is a no-op there), and for elements inside a
+   * same-origin iframe (a different window).
+   * @param {Element} el
+   * @returns {Window}
+   */
+  function getOwnerWindow(el) {
+    return (el.ownerDocument && el.ownerDocument.defaultView) || window;
+  }
+
+  /**
+   * tagName-based kind checks. Deliberately NOT `instanceof
+   * HTMLTextAreaElement`/`instanceof HTMLInputElement` against a
+   * module-scope constructor - `tagName` is a plain string property that
+   * behaves identically no matter which window/realm the element's own
+   * document belongs to, so these are correct for the top document, for
+   * elements inside an open shadow root, and for elements inside a
+   * same-origin iframe alike.
+   * @param {Element} el
+   * @returns {boolean}
+   */
+  function isTextareaElement(el) {
+    return el.tagName === "TEXTAREA";
+  }
+
+  /** @param {Element} el @returns {boolean} */
+  function isInputElement(el) {
+    return el.tagName === "INPUT";
+  }
+
+  /**
    * Always-skip rules that apply regardless of kind: disabled, readonly,
    * aria-readonly="true". Identifiable as separate branches per the
    * acceptance criteria, rather than folded into one boolean expression.
@@ -157,10 +214,10 @@
     let kind;
     let type;
 
-    if (el instanceof HTMLTextAreaElement) {
+    if (isTextareaElement(el)) {
       kind = "textarea";
       type = "textarea";
-    } else if (el instanceof HTMLInputElement) {
+    } else if (isInputElement(el)) {
       const resolved = resolveInputType(el);
       if (ALWAYS_SKIP_INPUT_TYPES.has(resolved)) {
         return null; // type=password/hidden/file - always skip
@@ -197,21 +254,40 @@
 
   /**
    * Single-pass walk over `root`, yielding a flat field descriptor for each
-   * targetable, non-skipped element. Written as one generator so it can be
-   * extended (phase 6) to recurse into open shadow roots and same-origin
-   * iframe documents uniformly, without a second, duplicated walk function.
-   * For phase 2, the document case is sufficient.
+   * targetable, non-skipped element. ONE shared generator handles the
+   * document, open shadow roots, and (when enabled) same-origin iframe
+   * documents uniformly - it recurses into itself via `yield*` for both
+   * cases rather than existing as two separate walk functions.
+   *
+   * Shadow DOM: `node.shadowRoot` is the live, standard accessor for an
+   * element's shadow root and is non-null ONLY for an open root - a closed
+   * root is genuinely unreachable from outside (the spec-mandated behavior
+   * `attachShadow({mode:"closed"})` exists to provide), so it is null there
+   * and this simply never recurses into it. No special-casing needed, no
+   * error possible.
+   *
+   * Iframes: only traversed when `options.includeIframes` is truthy (the
+   * popup's "include iframes" checkbox). Same-origin frames expose a real
+   * `contentDocument`; cross-origin frames make accessing it throw a
+   * SecurityError in some engines, or simply yield `null` in others - both
+   * are handled here (try/catch plus a null check) so a cross-origin frame
+   * is skipped QUIETLY: no exception escapes this function, no error is
+   * ever surfaced to the popup, and every other field in the tree - shadow
+   * roots and iframes alike - is still collected in the same run.
    *
    * Does not build nested structures and does not call getComputedStyle
    * except via the documented fallback inside isRenderedVisible.
    *
    * @param {Document|DocumentFragment} root
+   * @param {{includeIframes?: boolean}} [options]
    * @returns {Generator<{el: Element, kind: string, type: string, originalValue: string}>}
    */
-  function* collectFields(root) {
+  function* collectFields(root, options) {
     if (!root) {
       return;
     }
+
+    const opts = options || {};
 
     const doc = root.ownerDocument || root;
     if (!doc || typeof doc.createTreeWalker !== "function") {
@@ -226,9 +302,32 @@
         yield descriptor;
       }
 
-      // Phase 6 extension point: recurse into node.shadowRoot (if open) and,
-      // when include-iframes is set, into same-origin iframe documents -
-      // both via `yield* collectFields(...)` so this stays one generator.
+      // Open shadow root - recurse via the SAME generator. `shadowRoot` is
+      // null both for elements with no shadow root at all and for elements
+      // whose shadow root is closed, so both cases fall through here
+      // without any error or special handling.
+      if (node.shadowRoot) {
+        yield* collectFields(node.shadowRoot, opts);
+      }
+
+      // Same-origin iframe, only when the option is on. Every access that
+      // could throw on a cross-origin frame - reading contentDocument
+      // itself, and (defensively) anything about it - is inside this single
+      // try/catch, and a thrown error here never propagates out of
+      // collectFields: it is caught, ignored, and the walk continues with
+      // the iframe element's siblings/ancestors' siblings exactly as if the
+      // frame had never been visited.
+      if (opts.includeIframes && node.tagName === "IFRAME") {
+        try {
+          const iframeDoc = /** @type {HTMLIFrameElement} */ (node)
+            .contentDocument;
+          if (iframeDoc) {
+            yield* collectFields(iframeDoc, opts);
+          }
+        } catch (error) {
+          // Cross-origin frame (SecurityError) - skip quietly, run continues.
+        }
+      }
 
       node = walker.nextNode();
     }
@@ -773,10 +872,18 @@
    * @param {string} newValue
    */
   function setNativeValue(el, newValue) {
-    const proto =
-      el instanceof HTMLTextAreaElement
-        ? HTMLTextAreaElement.prototype
-        : HTMLInputElement.prototype;
+    // Resolve BOTH the textarea-vs-input branch and the prototype itself
+    // from the element's own realm (see getOwnerWindow's comment) - an
+    // element collected from a same-origin iframe has a different
+    // ownerDocument.defaultView than the top page, and `instanceof
+    // HTMLTextAreaElement`/`HTMLInputElement` checked against the TOP
+    // window's constructors would be false for it even when it genuinely is
+    // one, silently steering a textarea into the wrong (input) prototype's
+    // setter - which throws "Illegal invocation" - or vice versa.
+    const win = getOwnerWindow(el);
+    const proto = isTextareaElement(el)
+      ? win.HTMLTextAreaElement.prototype
+      : win.HTMLInputElement.prototype;
     const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
     descriptor.set.call(el, newValue);
     el.dispatchEvent(new InputEvent("input", { bubbles: true }));
@@ -999,7 +1106,10 @@
       : escapeDollarForReplace(replaceStr);
 
     // Collect once into a flat array - the ONE DOM walk for this whole run.
-    const collected = Array.from(collectFields(document));
+    // Passing `options` through means shadow roots are always traversed and
+    // iframe documents are traversed only when options.includeIframes (the
+    // popup's "include iframes" checkbox) is set.
+    const collected = Array.from(collectFields(document, options));
     const filtered = filterByTypes(collected, message.fieldTypes);
     const total = filtered.length;
 
@@ -1135,7 +1245,7 @@
    * @returns {{ok: boolean, matches: number, fields: number, totalFields: number, error: string|null}}
    */
   function handleCount(message) {
-    const collected = Array.from(collectFields(document));
+    const collected = Array.from(collectFields(document, message.options));
     const filtered = filterByTypes(collected, message.fieldTypes);
     const totalFields = filtered.length;
 
@@ -1243,6 +1353,12 @@
       resolveInputType,
       isAlwaysSkippedElement,
       isRenderedVisible,
+      // Phase 6 additions: cross-document-safe classification helpers,
+      // exposed so the "which realm's constructor was checked" bug can be
+      // asserted on directly, not just observed indirectly via a replace.
+      getOwnerWindow,
+      isTextareaElement,
+      isInputElement,
       handleCount,
       isValidMessage,
       // Phase 3 additions.

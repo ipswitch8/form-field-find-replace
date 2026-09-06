@@ -40,7 +40,7 @@ test.describe("collectFields (phase 2)", () => {
       }));
     });
 
-    expect(result).toHaveLength(11);
+    expect(result).toHaveLength(12);
 
     const ids = result.map((f) => f.id).sort();
     expect(ids).toEqual(
@@ -56,6 +56,7 @@ test.describe("collectFields (phase 2)", () => {
         "week-input",
         "time-input",
         "controlled-input",
+        "shadow-input",
       ].sort()
     );
 
@@ -64,6 +65,13 @@ test.describe("collectFields (phase 2)", () => {
     expect(ids).not.toContain("password-input");
     expect(ids).not.toContain("disabled-input");
     expect(ids).not.toContain("readonly-input");
+
+    // Phase 6: collectFields(document) with NO options must NOT recurse
+    // into iframes (includeIframes defaults to falsy) and must NOT be able
+    // to see inside the closed shadow root at all.
+    expect(ids).not.toContain("iframe-input");
+    expect(ids).not.toContain("closed-shadow-input");
+    expect(ids).not.toContain("cross-origin-input");
 
     // Resolved kind/type sanity per field.
     const byId = Object.fromEntries(result.map((f) => [f.id, f]));
@@ -80,6 +88,7 @@ test.describe("collectFields (phase 2)", () => {
       kind: "contenteditable",
       type: "contenteditable",
     });
+    expect(byId["shadow-input"]).toMatchObject({ kind: "input", type: "text" });
   });
 
   test("resolves a missing/unrecognized input type to 'text'", async ({
