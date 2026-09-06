@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<!--
+  Form Field Find & Replace - test fixture (phase 2).
+
+  Expected counts, computed against content/find-replace.js's collectFields
+  + describeField rules:
+
+    Non-skipped fields collected by collectFields(document) with NO
+    field-type filtering applied: 4
+      - #text-input           (kind: input,  type: text)
+      - #email-input          (kind: input,  type: email)
+      - #textarea-input       (kind: textarea, type: textarea)
+      - #contenteditable-div  (kind: contenteditable, type: contenteditable)
+
+    Always-skipped (must NOT appear in collectFields output):
+      - #password-input  (type="password")
+      - #disabled-input  (disabled)
+      - #readonly-input  (readonly)
+
+    Seeded text, for match-count assertions in later phases (the needle
+    "hello", case-insensitive, plain mode):
+      - #text-input value="hello world hello"                -> 2 matches
+      - #email-input value="hello@example.com"                -> 1 match
+      - #textarea-input text="hello there, hello again"       -> 2 matches
+      - #contenteditable-div textContent "hello world hello there" -> 2 matches
+      Total across the 4 non-skipped fields: 7 matches in 4 fields.
+
+    The password/disabled/readonly fields also contain "hello" in their
+    value, specifically to prove those matches are NEVER counted or touched.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Form Field Find &amp; Replace - Fixture</title>
+</head>
+<body>
+  <h1>Fixture page</h1>
+
+  <form id="plain-form" data-testid="plain-form">
+    <label for="text-input">Text</label>
+    <input
+      type="text"
+      id="text-input"
+      data-testid="text-input"
+      name="text-input"
+      value="hello world hello"
+    />
+
+    <label for="email-input">Email</label>
+    <input
+      type="email"
+      id="email-input"
+      data-testid="email-input"
+      name="email-input"
+      value="hello@example.com"
+    />
+
+    <label for="textarea-input">Textarea</label>
+    <textarea id="textarea-input" data-testid="textarea-input" name="textarea-input">hello there, hello again</textarea>
+
+    <label for="password-input">Password (must be left untouched)</label>
+    <input
+      type="password"
+      id="password-input"
+      data-testid="password-input"
+      name="password-input"
+      value="hello secret"
+    />
+  </form>
+
+  <div
+    id="contenteditable-div"
+    data-testid="contenteditable-div"
+    contenteditable="true"
+  ><b>hello</b> world <span>hello there</span></div>
+
+  <label for="disabled-input">Disabled (must be skipped)</label>
+  <input
+    type="text"
+    id="disabled-input"
+    data-testid="disabled-input"
+    name="disabled-input"
+    value="hello disabled"
+    disabled
+  />
+
+  <label for="readonly-input">Readonly (must be skipped)</label>
+  <input
+    type="text"
+    id="readonly-input"
+    data-testid="readonly-input"
+    name="readonly-input"
+    value="hello readonly"
+    readonly
+  />
+</body>
+</html>

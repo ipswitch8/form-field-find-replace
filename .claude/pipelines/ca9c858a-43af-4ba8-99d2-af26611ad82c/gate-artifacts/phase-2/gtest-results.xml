@@ -1,0 +1,18 @@
+<testsuites id="" name="" tests="6" failures="0" skipped="0" errors="0" time="10.222107">
+<testsuite name="bulk-fixture.spec.js" timestamp="2026-09-06T18:11:09.919Z" hostname="firefox" tests="1" failures="0" skipped="0" time="3.493" errors="0">
+<testcase name="fixture-bulk.html (phase 2 smoke coverage) › generates exactly 5000 inputs with a declared expected match count" classname="bulk-fixture.spec.js" time="3.493">
+</testcase>
+</testsuite>
+<testsuite name="collect-fields.spec.js" timestamp="2026-09-06T18:11:09.919Z" hostname="firefox" tests="5" failures="0" skipped="0" time="19.206" errors="0">
+<testcase name="collectFields (phase 2) › finds exactly the non-skipped fields in fixture.html" classname="collect-fields.spec.js" time="2.516">
+</testcase>
+<testcase name="collectFields (phase 2) › resolves a missing/unrecognized input type to &apos;text&apos;" classname="collect-fields.spec.js" time="2.57">
+</testcase>
+<testcase name="collectFields (phase 2) › count action returns matches and fields without mutating anything" classname="collect-fields.spec.js" time="5.575">
+</testcase>
+<testcase name="collectFields (phase 2) › field-type filtering excludes unchecked groups before counting" classname="collect-fields.spec.js" time="4.359">
+</testcase>
+<testcase name="collectFields (phase 2) › isValidMessage rejects malformed messages" classname="collect-fields.spec.js" time="4.186">
+</testcase>
+</testsuite>
+</testsuites>

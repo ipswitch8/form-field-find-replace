@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<!--
+  Form Field Find & Replace - bulk test fixture (phase 2+).
+
+  Generates exactly 5,000 <input type="text"> elements on load, deterministically
+  (no Math.random anywhere), for scale/perf/progress/cancel testing in later
+  phases. Every 10th field (index % 10 === 0, 0-based) is seeded with the
+  literal needle "hello" so the total match count is fixed and known ahead of
+  time:
+
+    5000 fields / 10 = 500 seeded fields, each containing "hello" exactly once
+    => window.__EXPECTED_MATCHES = 500 (plain mode, case-insensitive, needle "hello")
+
+  All other fields contain deterministic non-matching filler text
+  ("field N value") so they never contribute to the match count.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Form Field Find &amp; Replace - Bulk Fixture</title>
+</head>
+<body>
+  <h1>Bulk fixture page (5,000 inputs)</h1>
+  <form id="bulk-form" data-testid="bulk-form"></form>
+
+  <script>
+    "use strict";
+
+    // Deterministic generation - no Math.random, no Date.now() in the seed.
+    const TOTAL_FIELDS = 5000;
+    const SEED_INTERVAL = 10; // every 10th field is seeded with "hello"
+    const EXPECTED_MATCHES = Math.floor(TOTAL_FIELDS / SEED_INTERVAL);
+
+    const form = document.getElementById("bulk-form");
+    const fragment = document.createDocumentFragment();
+
+    for (let i = 0; i < TOTAL_FIELDS; i++) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.id = "bulk-input-" + i;
+      input.dataset.testid = "bulk-input-" + i;
+      input.name = "bulk-input-" + i;
+      input.value =
+        i % SEED_INTERVAL === 0
+          ? "hello field " + i + " value"
+          : "field " + i + " value";
+      fragment.appendChild(input);
+    }
+
+    form.appendChild(fragment);
+
+    // Explicit exported constants for the test harness.
+    window.__TOTAL_FIELDS = TOTAL_FIELDS;
+    window.__EXPECTED_MATCHES = EXPECTED_MATCHES;
+  </script>
+</body>
+</html>
