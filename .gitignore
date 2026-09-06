@@ -1,0 +1,7 @@
+node_modules/
+test-results/
+web-ext-artifacts/
+.claude/hook-debug.log
+*.swp
+*.tmp
+*~

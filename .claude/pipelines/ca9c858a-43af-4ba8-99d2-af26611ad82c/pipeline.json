@@ -1,0 +1,127 @@
+{
+  "task": "Build the Firefox MV3 extension 'Form Field Find & Replace' per SPEC.md: manifest + popup shell, content-script field collection/filtering, replacement path with native-setter and format validation/rollback, regex backreferences and match preview, chunked loop with progress/cancel at scale, shadow DOM and iframe traversal, undo, and final tests/lint/security-audit. Step 0 security pass is already complete.",
+  "pipeline_id": "ca9c858a-43af-4ba8-99d2-af26611ad82c",
+  "generated_at": "2026-09-06T00:00:00Z",
+  "total_phases": 8,
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Manifest and Popup Shell",
+      "description": "Create manifest.json (MV3 event page, minimal permissions) and the full popup/{popup.html,popup.js,popup.css} UI shell with persistence, before any content-script logic exists.",
+      "acceptance_criteria": [
+        "manifest.json exists, is valid JSON, manifest_version === 3, browser_specific_settings.gecko.id === 'find-replace@example.local', browser_specific_settings.gecko.strict_min_version === '115.0'",
+        "manifest.json permissions array is exactly ['activeTab','scripting','storage'] with no host_permissions entries",
+        "manifest.json declares background.scripts (event page) and does NOT declare background.service_worker",
+        "popup/popup.html contains: find input, replace input, checkboxes for match case / whole word / regular expression / include iframes, a collapsible 'Field types' section with the four groups (Text: text/search/url/tel/email; Numeric and date: number/date/datetime-local/month/week/time; Multi-line: textarea; Rich text: contenteditable) with select-all/select-none links, buttons Count matches/Replace all/Undo last replace/Cancel, a status line element, and a progress bar element",
+        "Field-type default checked state in popup.html/popup.js matches spec: Text, Multi-line, Rich text checked by default; Numeric and date unchecked by default",
+        "popup/popup.js persists find/replace strings, option checkbox states, and field-type selections to storage.local on change and restores them on popup load, verifiable by reading the storage.local.set/get call sites",
+        "popup/popup.css exists, declares a system font stack, and includes a prefers-color-scheme media query; no external framework files are referenced",
+        "Running `npx web-ext lint` from the repo root reports zero errors (warnings acceptable at this stage); command output is captured and reviewable"
+      ],
+      "gate_agents": ["karen", "validator", "security-audit"]
+    },
+    {
+      "id": "phase-2",
+      "name": "Field Collection, Filtering and Test Fixtures",
+      "description": "Implement content/find-replace.js's collectFields(root) single-pass generator with always-skip rules and field-type filtering wired to a counting-only 'count' message; create test/fixture.html and test/fixture-bulk.html (5,000 seeded inputs) plus a Node+Playwright test harness scaffold with an initial passing test.",
+      "acceptance_criteria": [
+        "content/find-replace.js implements collectFields(root) as a single-pass walk producing flat descriptors {el, kind, type, originalValue}, with no getComputedStyle call in the main walk except as a documented fallback when offsetParent is null",
+        "Missing or unrecognized input type attributes resolve to 'text' and the resolved type is exposed on the descriptor",
+        "Always-skip rules are implemented as identifiable code branches: type password/hidden/file, disabled, readonly, aria-readonly='true', and zero-rendered-size (offsetParent === null and position is not fixed)",
+        "Field-type filtering applies the popup's four checkbox groups to the collected array before computing the count returned to the popup",
+        "test/fixture.html exists containing: a form with text input, email input, textarea, and a password field; a contenteditable div with nested <b> and <span>; a disabled input; a readonly input",
+        "test/fixture-bulk.html exists, generates exactly 5,000 input elements via an inline script on page load, and states a known seeded match count as an explicit constant (JS comment or exported value) in the file",
+        "package.json exists at the repo root with a 'test' script and Playwright declared as a devDependency",
+        "Running `npm test` executes and passes at least one test opening test/fixture.html and asserting collectFields returns the expected non-skipped field count, producing test-results/gtest-results.xml"
+      ],
+      "gate_agents": ["karen", "validator", "test-runner"]
+    },
+    {
+      "id": "phase-3",
+      "name": "Replacement Path: Native Setter and Format Validation",
+      "description": "Implement the shared count/replace matcher, native-setter-plus-events value assignment for input/textarea, contenteditable text-node replacement, and the format read-back/rollback for number/date/datetime-local/month/week/time fields; extend message handling and fixture.html accordingly.",
+      "acceptance_criteria": [
+        "A single matcher function is used by both the count code path and the replace code path (same function referenced from both call sites)",
+        "Plain mode escapes regex metacharacters in the needle before building the RegExp; whole-word mode wraps the pattern in \\b...\\b; regex mode compiles the user pattern in try/catch and returns the error message via the response's error field rather than throwing",
+        "Input/textarea value assignment uses Object.getOwnPropertyDescriptor(proto,'value').set.call(el,newValue) followed by dispatching InputEvent('input',{bubbles:true}) and Event('change',{bubbles:true})",
+        "contenteditable replacement walks text nodes and sets nodeValue per node (no innerHTML reassignment), then dispatches a bubbling input event on the host element",
+        "For number/date/datetime-local/month/week/time fields, code reads el.value back after assignment; on mismatch it restores the original value and records the field as skipped with reason 'invalid format', never leaving the field blank as a side effect",
+        "The runtime message listener validates message.action is one of count/replace/undo/cancel and validates presence of find/options/fieldTypes before acting, ignoring malformed messages",
+        "test/fixture.html additionally contains one each of number, date, datetime-local, month, week, time inputs prefilled with valid values, plus a controlled-input widget that reverts its value unless a real input event fires",
+        "`npm test` passes two new tests: (1) a replace against the controlled-input widget updates its displayed value via the native-setter path, (2) a date-field replace that produces an invalid value is rolled back so el.value equals the original value (not empty)"
+      ],
+      "gate_agents": ["karen", "validator", "security-audit", "test-runner"]
+    },
+    {
+      "id": "phase-4",
+      "name": "Regex Backreferences and Match Preview",
+      "description": "Add full substitution-grammar support in regex mode, literal-dollar escaping in plain mode, backreference validation against declared groups, and a live first-match preview in the popup.",
+      "acceptance_criteria": [
+        "In plain (non-regex) mode, any '$' in the replacement string is escaped to '$$' before being passed to String.prototype.replace, verified by a test where finding/replacing literal text containing '$5.00' produces exactly '$5.00' unmangled",
+        "Regex mode supports $1-$99, $<name> with named capture groups, $&, $`, $', and $$, each covered by at least one passing test",
+        "Before running a replace, code checks every $N and $<name> token in the replacement string against the compiled pattern's actual group count/names; on a mismatch the popup status line shows a warning and the replace run is blocked until acknowledged or corrected, verifiable via a distinct warning/error code path that does not invoke the replace loop",
+        "popup.js computes and displays a live preview of the first match's substitution result as the user types, using the same shared matcher function, in a dedicated preview UI element",
+        "`npm test` passes new tests covering literal-dollar escaping, each backreference token type, the group-mismatch warning path, and the live preview computation, producing an updated test-results/gtest-results.xml"
+      ],
+      "gate_agents": ["karen", "validator", "test-runner"]
+    },
+    {
+      "id": "phase-5",
+      "name": "Chunked Loop with Progress, Cancel and Scale Validation",
+      "description": "Implement the ~200-field chunked processing loop with event-loop yields, cancellation, throttled progress messaging, and wall-time reporting; validate directly against test/fixture-bulk.html's 5,000 fields.",
+      "acceptance_criteria": [
+        "A chunk-size constant of approximately 200 is defined in code with a comment noting it was tuned against fixture-bulk.html",
+        "The main replace loop is a plain indexed for loop over the pre-collected flat field array with no Array.prototype.map/recursion over the field list, and the RegExp is constructed once outside the loop with lastIndex reset per field",
+        "After each chunk, a `{type:'progress', done, total, replaced, skipped}` message is posted to the popup, throttled in code to at most ~10 posts per second",
+        "A module-level `cancelled` boolean is checked at the top of each chunk; setting it stops further chunk processing while leaving already-replaced fields in place",
+        "The final status message includes total wall-clock time in milliseconds",
+        "Undo snapshots are appended to a flat array during the same replace pass (not a second DOM walk), capped at 50,000 entries; when the collected field count would exceed the cap, undo is disabled for that run and the popup warns the user before Replace all begins",
+        "`npm test` includes a fixture-bulk.html-driven test suite asserting: (a) a full replace run reports the pre-seeded match count documented in phase-2's fixture-bulk.html constant, (b) received progress messages show monotonically increasing `done` values, (c) triggering cancel mid-run halts further replacements and reports a partial replaced count less than total — all producing test-results/gtest-results.xml",
+        "perf-benchmarks records the wall-clock time of a full 5,000-field replace run and confirms no single blocking task exceeds one chunk's expected processing time, with the measurement documented in benchmark output"
+      ],
+      "gate_agents": ["karen", "validator", "perf-benchmarks", "test-runner"]
+    },
+    {
+      "id": "phase-6",
+      "name": "Shadow DOM and Iframe Traversal",
+      "description": "Generalize collectFields into one generator handling document, open shadow roots, and same-origin iframe documents uniformly, skipping closed shadow roots and cross-origin iframes quietly; extend fixture.html with the corresponding cases.",
+      "acceptance_criteria": [
+        "collectFields(root) recurses into every open shadowRoot encountered, and (when include-iframes is set) into same-origin iframe documents, via one shared generator implementation with no separate duplicated walk function for shadow-root vs iframe traversal",
+        "Cross-origin iframe access is wrapped in try/catch and skipped without throwing or surfacing any error to the popup UI",
+        "test/fixture.html now also contains: a field inside an open shadow root, a same-origin iframe containing its own form field, and a cross-origin iframe reference that would raise a SecurityError on access",
+        "`npm test` passes tests confirming: a shadow-root field is found and correctly replaced; a same-origin iframe field is found and replaced only when include-iframes is checked and is not found when unchecked; the cross-origin iframe causes no thrown error and does not abort the run",
+        "Closed shadow roots (if present in fixture.html) are confirmed unreachable/skipped without error"
+      ],
+      "gate_agents": ["karen", "validator", "security-audit", "test-runner"]
+    },
+    {
+      "id": "phase-7",
+      "name": "Undo",
+      "description": "Implement one-level undo restoring all touched elements' original values through the native-setter-plus-events path, wired to the popup's Undo button, keeping undo valid after a cancelled run.",
+      "acceptance_criteria": [
+        "A module-level snapshot store of {el, value} entries is populated before the first mutation of each replace run and is what the undo action restores from; starting a new replace run replaces the previous snapshot (one level only)",
+        "Undo restores values via the same native-setter-plus-input/change-event path used by replace, not a direct .value assignment",
+        "After a cancelled run, invoking undo restores exactly the fields changed before cancellation, not the full originally-collected set",
+        "popup.js enables 'Undo last replace' only after a completed or cancelled replace run with at least one changed field, and disables it again after undo is invoked",
+        "Popup UI text states that one level of undo is supported",
+        "`npm test` passes tests for: full-run undo restores all changed fields; partial (cancelled) run undo restores only the changed subset; Undo button enabled/disabled state transitions across a run/cancel/undo cycle"
+      ],
+      "gate_agents": ["karen", "validator", "test-runner"]
+    },
+    {
+      "id": "phase-8",
+      "name": "Tests, Lint and Security Audit Finalization",
+      "description": "Complete remaining deliverables, run the full automated suite, web-ext lint, and security-audit.sh clean, and finalize README/CLAUDE.md documentation.",
+      "acceptance_criteria": [
+        "All Step 3 deliverables exist at their expected paths: manifest.json, background.js, popup/popup.html, popup/popup.js, popup/popup.css, content/find-replace.js, test/fixture.html, test/fixture-bulk.html, security-audit.sh, .claude-security.json, CLAUDE.md, README.md",
+        "security-audit.sh is executable and implements: credential/secret grep scan, .git directory permission check, manifest.json permission review against .claude-security.json's allowlist, a scan for eval/innerHTML/Function( usage under popup/ and content/, and exits non-zero when any finding occurs",
+        ".claude-security.json defines scan paths, ignore globs, severity thresholds, and a required-manifest-permissions allowlist matching activeTab/scripting/storage",
+        "README.md documents: loading the extension via about:debugging -> This Firefox -> Load Temporary Add-on -> manifest.json; how to run the test fixtures and `npm test`; known limitations (closed shadow roots, cross-origin iframes, canvas/CodeMirror-style editors); and recorded wall-clock timing observations from the fixture-bulk.html 5,000-field run",
+        "Running `./security-audit.sh` against the working tree exits 0 with no findings",
+        "Running `npx web-ext lint` against the extension root reports zero errors",
+        "Running `npm test` executes the complete suite accumulated across all phases and passes 100%, producing test-results/gtest-results.xml with zero failing tests"
+      ],
+      "gate_agents": ["karen", "validator", "security-audit", "test-runner"]
+    }
+  ]
+}

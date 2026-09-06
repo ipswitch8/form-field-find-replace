@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Form Field Find &amp; Replace</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<main id="app" data-testid="app">
+  <h1 id="app-title" data-testid="app-title">Form Field Find &amp; Replace</h1>
+
+  <form id="find-replace-form" data-testid="find-replace-form" autocomplete="off">
+
+    <div class="field-row">
+      <label for="find-input" id="find-label" data-testid="find-label">Find</label>
+      <input
+        type="text"
+        id="find-input"
+        name="find"
+        data-testid="find-input"
+        aria-describedby="status-line"
+      >
+    </div>
+
+    <div class="field-row">
+      <label for="replace-input" id="replace-label" data-testid="replace-label">Replace with</label>
+      <input
+        type="text"
+        id="replace-input"
+        name="replace"
+        data-testid="replace-input"
+      >
+    </div>
+
+    <div id="match-preview-row" class="field-row" data-testid="match-preview-row">
+      <span id="match-preview-label" data-testid="match-preview-label">Preview</span>
+      <output
+        id="match-preview"
+        data-testid="match-preview"
+        for="find-input replace-input"
+      ></output>
+    </div>
+
+    <fieldset id="options-fieldset" data-testid="options-fieldset">
+      <legend>Options</legend>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="match-case-checkbox" name="matchCase" data-testid="match-case-checkbox">
+        <label for="match-case-checkbox" data-testid="match-case-label">Match case</label>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="whole-word-checkbox" name="wholeWord" data-testid="whole-word-checkbox">
+        <label for="whole-word-checkbox" data-testid="whole-word-label">Whole word</label>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="regex-checkbox" name="regex" data-testid="regex-checkbox">
+        <label for="regex-checkbox" data-testid="regex-label">Regular expression</label>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="include-iframes-checkbox" name="includeIframes" data-testid="include-iframes-checkbox">
+        <label for="include-iframes-checkbox" data-testid="include-iframes-label">Include iframes</label>
+      </div>
+    </fieldset>
+
+    <section id="field-types-section" data-testid="field-types-section">
+      <h2 id="field-types-heading" data-testid="field-types-heading">
+        <button
+          type="button"
+          id="field-types-toggle"
+          data-testid="field-types-toggle"
+          aria-expanded="true"
+          aria-controls="field-types-content"
+        >
+          Field types
+        </button>
+      </h2>
+
+      <div id="field-types-content" data-testid="field-types-content">
+
+        <div class="field-types-actions">
+          <a href="#" id="field-types-select-all" data-testid="field-types-select-all" role="button">Select all</a>
+          <a href="#" id="field-types-select-none" data-testid="field-types-select-none" role="button">Select none</a>
+        </div>
+
+        <fieldset class="field-type-group" id="fieldtype-group-text" data-testid="fieldtype-group-text">
+          <legend>Text</legend>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-text" data-testid="fieldtype-text" data-field-type="text" checked>
+            <label for="fieldtype-text" data-testid="fieldtype-text-label">text</label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-search" data-testid="fieldtype-search" data-field-type="search" checked>
+            <label for="fieldtype-search" data-testid="fieldtype-search-label">search</label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-url" data-testid="fieldtype-url" data-field-type="url" checked>
+            <label for="fieldtype-url" data-testid="fieldtype-url-label">url</label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-tel" data-testid="fieldtype-tel" data-field-type="tel" checked>
+            <label for="fieldtype-tel" data-testid="fieldtype-tel-label">tel</label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-email" data-testid="fieldtype-email" data-field-type="email" checked>
+            <label for="fieldtype-email" data-testid="fieldtype-email-label">email</label>
+          </div>
+        </fieldset>
+
+        <fieldset class="field-type-group" id="fieldtype-group-numeric" data-testid="fieldtype-group-numeric">
+          <legend>Numeric and date</legend>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-number" data-testid="fieldtype-number" data-field-type="number">
+            <label for="fieldtype-number" data-testid="fieldtype-number-label">number</label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-date" data-testid="fieldtype-date" data-field-type="date">
+            <label for="fieldtype-date" data-testid="fieldtype-date-label">date</label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-datetime-local" data-testid="fieldtype-datetime-local" data-field-type="datetime-local">
+            <label for="fieldtype-datetime-local" data-testid="fieldtype-datetime-local-label">datetime-local</label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-month" data-testid="fieldtype-month" data-field-type="month">
+            <label for="fieldtype-month" data-testid="fieldtype-month-label">month</label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-week" data-testid="fieldtype-week" data-field-type="week">
+            <label for="fieldtype-week" data-testid="fieldtype-week-label">week</label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-time" data-testid="fieldtype-time" data-field-type="time">
+            <label for="fieldtype-time" data-testid="fieldtype-time-label">time</label>
+          </div>
+        </fieldset>
+
+        <fieldset class="field-type-group" id="fieldtype-group-multiline" data-testid="fieldtype-group-multiline">
+          <legend>Multi-line</legend>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-textarea" data-testid="fieldtype-textarea" data-field-type="textarea" checked>
+            <label for="fieldtype-textarea" data-testid="fieldtype-textarea-label">textarea</label>
+          </div>
+        </fieldset>
+
+        <fieldset class="field-type-group" id="fieldtype-group-richtext" data-testid="fieldtype-group-richtext">
+          <legend>Rich text</legend>
+          <div class="checkbox-row">
+            <input type="checkbox" class="field-type-checkbox" id="fieldtype-contenteditable" data-testid="fieldtype-contenteditable" data-field-type="contenteditable" checked>
+            <label for="fieldtype-contenteditable" data-testid="fieldtype-contenteditable-label">contenteditable</label>
+          </div>
+        </fieldset>
+
+      </div>
+    </section>
+
+    <div id="actions-row" data-testid="actions-row">
+      <button type="button" id="count-btn" data-testid="count-btn">Count matches</button>
+      <button type="submit" id="replace-all-btn" data-testid="replace-all-btn">Replace all</button>
+      <button type="button" id="undo-btn" data-testid="undo-btn" disabled>Undo last replace</button>
+      <button type="button" id="cancel-btn" data-testid="cancel-btn" disabled>Cancel</button>
+    </div>
+
+    <p id="undo-note" data-testid="undo-note">Only one level of undo is supported.</p>
+
+    <div id="progress-row" data-testid="progress-row">
+      <progress
+        id="progress-bar"
+        data-testid="progress-bar"
+        role="progressbar"
+        aria-valuenow="0"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        value="0"
+        max="100"
+      ></progress>
+      <span id="field-counter" data-testid="field-counter" aria-live="polite">field 0 of 0</span>
+    </div>
+
+    <div id="status-line" data-testid="status-line" role="status" aria-live="polite"></div>
+
+  </form>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>
