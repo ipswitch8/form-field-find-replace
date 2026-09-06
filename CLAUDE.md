@@ -49,7 +49,25 @@ their own data. Those are out of scope for a client-side content script.
 | Permission | Why it is needed | Why nothing broader |
 |---|---|---|
 | `activeTab` | Grants temporary access to the tab the user is currently interacting with, only after an explicit user gesture (clicking the toolbar action). | This is what makes `host_permissions` unnecessary. `activeTab` never persists across navigations or tabs, so there is no ambient access sitting in the background. |
-| `scripting` | Lets the background event page call `browser.scripting.executeScript` to inject `content/find-replace.js` into the active tab, on demand, at the moment the user invokes the extension. | Injection is per-invocation, not declarative. The manifest has no `content_scripts` entry and no `matches` pattern — the extension is not present on any page until the user asks for it. |
+| `scripting` | Lets the **popup** call `browser.scripting.executeScript` to inject `content/find-replace.js` into the active tab, on demand, at the moment the user invokes the extension. | Injection is per-invocation, not declarative. The manifest has no `content_scripts` entry and no `matches` pattern — the extension is not present on any page until the user asks for it. |
+
+### Why injection is popup-driven, not background-driven
+
+`manifest.json` sets `action.default_popup`, and per the WebExtension spec
+`browser.action.onClicked` **never fires** when a popup is configured — the
+browser opens the popup instead of dispatching a click event. An earlier version
+wired injection to that listener in `background.js`; it was dead code, and the
+extension could not reach any page at all. Injection now happens from
+`popup.js`, which is the correct place: the click that opened the popup is
+itself the user gesture that grants `activeTab`, so the popup holds the grant.
+
+The popup pings the content script before injecting and injects only if the ping
+gets no answer. Re-injecting would re-run the content script's IIFE and reset
+its module-level state — including the undo snapshot — so a user who ran a
+replace, closed the popup and reopened it would silently lose Undo.
+
+`background.js` remains as the MV3 event page required by the spec, but it does
+not perform injection.
 | `storage` | Persists the last-used find/replace strings, checkbox states, and field-type selections in `storage.local` between popup opens. | `storage.local` is local to the browser profile. Nothing is synced, nothing is remote. |
 
 **No `host_permissions` entry exists, on purpose.** A host permission would

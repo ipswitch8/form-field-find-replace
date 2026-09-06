@@ -338,7 +338,17 @@ function registerProgressListener() {
   });
 }
 
-// ---- Messaging (stubs until content/find-replace.js exists) -----------
+// ---- Messaging -----------------------------------------------------------
+
+// LEADING SLASH IS LOAD-BEARING. Without it Firefox resolves this against the
+// calling document's base URI - the popup - and tries to load
+// moz-extension://<uuid>/popup/content/find-replace.js, which 404s with
+// "Unable to load script" and leaves the page with no content script at all.
+// A leading slash is unambiguously extension-root-relative.
+// This was found only by clicking the real toolbar button in a real Firefox
+// and reading the browser console; a mocked test that asserts the string it
+// was given agrees with the bug and passes.
+const CONTENT_SCRIPT_PATH = "/content/find-replace.js";
 
 /**
  * Build the message payload sent to the content script for count/replace
@@ -357,9 +367,68 @@ function buildMessage(action) {
 }
 
 /**
- * Send a message to the content script in the active tab. Content script
- * injection and handling arrive in phase 2 - until then this fails
- * gracefully and reports so via the status line, rather than throwing.
+ * Ensure the content script is present in the given tab, injecting it ONLY
+ * if it genuinely isn't there yet.
+ *
+ * Why the ping-first check matters (do not simplify this away): re-injecting
+ * content/find-replace.js re-runs its top-level IIFE, which RESETS its
+ * module-level state - including the last-replace undo snapshot
+ * (lastUndoSnapshot) and the in-flight-run cancellation flag (cancelled). If
+ * this function injected unconditionally every time the popup opened, a user
+ * who ran a replace, closed the popup, and reopened it would silently lose
+ * their undo snapshot: the Undo button would still render enabled (the
+ * popup's own hasUndoableChange state persists independently), but the
+ * content script backing it would have nothing left to restore. Pinging
+ * first and injecting only when the ping fails (no receiver in the tab)
+ * preserves that state across popup open/close cycles - injection happens
+ * exactly once per page load, not once per popup open.
+ *
+ * This needs no host_permissions: activeTab is granted by the user's click
+ * on the toolbar action that opened this popup, and `scripting` is already
+ * declared in manifest.json.
+ * @param {number} tabId
+ * @returns {Promise<void>}
+ */
+async function ensureContentScriptInjected(tabId) {
+  if (typeof tabId !== "number") {
+    return;
+  }
+
+  try {
+    await browser.tabs.sendMessage(tabId, { action: "ping" });
+    // Resolved - the content script is already present and its state
+    // (undo snapshot, cancelled flag) is intact. Do nothing.
+    return;
+  } catch (error) {
+    // No receiver in the tab - the content script isn't loaded (fresh
+    // navigation, or the very first time the popup has opened against this
+    // tab). Fall through and inject it below.
+  }
+
+  try {
+    await browser.scripting.executeScript({
+      target: { tabId },
+      files: [CONTENT_SCRIPT_PATH],
+    });
+  } catch (error) {
+    // Genuinely unscriptable page (about:, the add-ons manager,
+    // view-source:, etc.) - fail quietly. sendToContentScript's own
+    // messaging attempt will fail too and surface the friendly status line;
+    // this helper never throws.
+    console.warn(
+      "Form Field Find & Replace: content script injection failed",
+      error
+    );
+  }
+}
+
+/**
+ * Send a message to the content script in the active tab. If the content
+ * script isn't there yet (fresh navigation, or a tab the popup has never
+ * talked to), ensure it's injected and retry the send exactly once before
+ * giving up. Genuinely unscriptable pages (about:, the add-ons manager,
+ * view-source:, etc.) still fail gracefully via the catch below rather than
+ * throwing.
  * @param {"count"|"replace"|"undo"|"cancel"} action
  */
 async function sendToContentScript(action) {
@@ -370,14 +439,21 @@ async function sendToContentScript(action) {
       return null;
     }
 
-    const response = await browser.tabs.sendMessage(tab.id, buildMessage(action));
-    return response;
+    try {
+      return await browser.tabs.sendMessage(tab.id, buildMessage(action));
+    } catch (firstError) {
+      // No receiver - ensure the content script is injected and retry the
+      // send exactly once before giving up.
+      await ensureContentScriptInjected(tab.id);
+      return await browser.tabs.sendMessage(tab.id, buildMessage(action));
+    }
   } catch (error) {
-    // Expected until the content script is implemented (phase 2), and also
-    // whenever the active page cannot be scripted (about:, add-ons manager,
-    // etc.). Surface a friendly status rather than an unhandled rejection.
+    // Both the original send and the retry-after-injection failed - most
+    // likely the active page simply can't be scripted by an extension
+    // (about:, the add-ons manager, view-source:, etc.). Surface a friendly
+    // status rather than an unhandled rejection.
     setStatus(
-      "Could not reach the page. (Content script not available yet.)",
+      "Could not reach the page. (This page can't be scripted by an extension.)",
       { error: true }
     );
     return null;
@@ -598,6 +674,27 @@ async function init() {
   updateButtonStates();
   setProgress(0, 0);
   updatePreview();
+
+  // Ensure the content script is present in the active tab as soon as the
+  // popup opens, using the activeTab grant from the click that opened it.
+  // This is what makes the real click-to-use flow actually work (see
+  // background.js's comment on why injection can't happen from onClicked),
+  // and it makes the flow testable end-to-end without requiring the user to
+  // press Count/Replace first. ensureContentScriptInjected pings before
+  // injecting, so this is a no-op if the script is already there.
+  try {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tab && typeof tab.id === "number") {
+      await ensureContentScriptInjected(tab.id);
+    }
+  } catch (error) {
+    // No active tab, or a page that can't be scripted - the first real
+    // action (Count/Replace) will surface its own friendly status.
+    console.warn(
+      "Form Field Find & Replace: could not ensure content script on init",
+      error
+    );
+  }
 }
 
 init();

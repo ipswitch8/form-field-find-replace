@@ -66,15 +66,38 @@ geckodriver automatically). Set `FFR_HEADLESS=0` to watch it run.
 | storage.local round trip | persistence really survives a popup reload through the actual storage API |
 | injection without a gesture is refused | **security**: with no host permissions, Firefox refuses `scripting.executeScript` with "Missing host permission for the tab" until the user invokes the extension. If this ever stops failing, permissions have been widened and the extension can read every open page. |
 | toolbar action registered and clickable | the real entry point exists in Firefox's unified extensions panel and can be invoked |
+| **real toolbar click injects the content script** | clicking the actual button opens the popup, which injects into the page without error. This is the test that caught the extension being completely non-functional — see below. |
 
-**Known boundary.** The full positive path — toolbar click grants `activeTab`,
-popup injects, replace runs — is not automated end to end. The popup opens in an
-out-of-process `browser` element inside browser chrome, and its document is not
-reachable from Marionette's chrome context. The two halves are covered
-separately (the gesture is clickable; injection without one is refused), and the
-replace logic itself is covered exhaustively by the Playwright suite. Closing
-the middle would need a WebDriver BiDi session against the popup's browsing
-context.
+### The bug this suite exists for
+
+An earlier version of this extension did not work at all. `manifest.json` sets
+`action.default_popup`, so `browser.action.onClicked` never fires, so the
+injection wired to that listener in `background.js` was dead code and the popup
+messaged a content script nobody had injected. Every real click produced
+"Could not reach the page".
+
+All 61 Playwright tests passed throughout, because every one of them injects
+`content/find-replace.js` itself — by construction they can never exercise the
+extension's own activation path. Only clicking the real button in a real Firefox
+found it.
+
+The fix then hit a second, subtler bug of the same family: `executeScript`'s
+`files` path was `"content/find-replace.js"`, which Firefox resolved against the
+popup's base URI as `/popup/content/find-replace.js` and failed to load. The
+mocked Playwright test asserted the exact string it had been handed, so it
+agreed with the bug and passed. The leading slash in
+`popup.js`'s `CONTENT_SCRIPT_PATH` is load-bearing; both the Playwright
+assertion and the Selenium test now guard it.
+
+**Known boundary.** The suite verifies that the real click injects cleanly, but
+does not then drive the popup's own buttons to complete a replace: the popup is
+an out-of-process `browser` element in browser chrome and its document is not
+reachable from Marionette's chrome context. Note also that a real content script
+runs in an **isolated world**, so `window.__ffr` is deliberately invisible to
+page-context `execute_script` — the Selenium test asserts on the absence of
+extension errors in Firefox's console service instead, which is what actually
+distinguishes a successful injection from a failed one. Closing the last gap
+would need a WebDriver BiDi session against the popup's browsing context.
 
 Two environment notes, both specific to this host rather than the extension:
 

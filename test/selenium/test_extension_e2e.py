@@ -427,6 +427,91 @@ class ExtensionE2ETest(unittest.TestCase):
             self.driver.set_context("content")
 
 
+    def test_real_toolbar_click_actually_injects_the_content_script(self):
+        """THE regression test: the real user gesture must reach the page.
+
+        This is the test that was missing, and its absence hid a bug that made
+        the entire extension non-functional in real use: manifest sets
+        action.default_popup, so browser.action.onClicked never fires, so the
+        injection wired to that listener in background.js was dead code, and
+        the popup messaged a content script nobody had injected. Every user
+        click produced "Could not reach the page".
+
+        All 61 Playwright tests missed it by construction - they inject the
+        content script themselves. Only clicking the real button and then
+        looking at the real page can catch it.
+
+        Injection now happens from the popup, which holds the activeTab grant
+        from the very click that opened it.
+        """
+        self.driver.get(FIXTURE)
+        page_handle = self.driver.current_window_handle
+
+        self.driver.set_context("chrome")
+        try:
+            # Clear the console first so we only judge THIS click.
+            self.driver.execute_script("Services.console.reset();")
+            self.driver.execute_script(
+                "document.getElementById('unified-extensions-button').click();"
+            )
+            time.sleep(2)
+            clicked = self.driver.execute_script(
+                """
+                const nodes = document.querySelectorAll('[data-extensionid]');
+                for (const n of nodes) {
+                  if ((n.getAttribute('data-extensionid') || '').includes('find-replace')) {
+                    const a = n.querySelector('.unified-extensions-item-action-button')
+                           || n.querySelector('toolbarbutton') || n;
+                    a.click();
+                    return true;
+                  }
+                }
+                return false;
+                """
+            )
+            self.assertTrue(clicked, "could not click the extension's toolbar action")
+            time.sleep(4)  # popup opens, init() runs, injection is attempted
+
+            # WHY THE CONSOLE AND NOT window.__ffr:
+            # a real content script runs in an ISOLATED world, so a property it
+            # sets on `window` is invisible to page-context execute_script. The
+            # Playwright suite can see window.__ffr only because addScriptTag
+            # runs in the PAGE world - a different mechanism entirely. Asserting
+            # on window.__ffr here would fail even when injection succeeds, and
+            # would have been a test that could never pass.
+            #
+            # A failed injection DOES leave a precise, observable trace: Firefox
+            # logs "Unable to load script: <resolved url>" for a bad path and a
+            # permission error for a missing grant. That is the signal.
+            errors = self.driver.execute_script(
+                """
+                const out = [];
+                const msgs = Services.console.getMessageArray() || [];
+                for (const m of msgs) {
+                  let s = '';
+                  try { s = m.message || ''; } catch (e) {}
+                  if (!s) continue;
+                  if (s.includes('Unable to load script') ||
+                      s.includes('Missing host permission') ||
+                      (s.includes('find-replace') && s.includes('Error'))) {
+                    out.push(s.slice(0, 300));
+                  }
+                }
+                return out;
+                """
+            )
+        finally:
+            self.driver.set_context("content")
+
+        self.assertEqual(
+            errors,
+            [],
+            "clicking the real toolbar action produced extension errors - the "
+            "content script did not reach the page:\n  "
+            + "\n  ".join(errors),
+        )
+
+
 def main():
     try:
         probe = build_driver()

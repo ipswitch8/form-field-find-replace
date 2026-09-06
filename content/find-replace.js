@@ -1329,10 +1329,13 @@
 
   // ---- Message handling -----------------------------------------------------
 
-  const VALID_ACTIONS = new Set(["count", "replace", "undo", "cancel"]);
+  const VALID_ACTIONS = new Set(["count", "replace", "undo", "cancel", "ping"]);
 
   /**
    * Validate the shape of an incoming runtime message before acting on it.
+   * A "ping" needs no find/options/fieldTypes - it exists solely so the
+   * popup can cheaply detect whether this content script is already present
+   * in the tab (via tabs.sendMessage succeeding) WITHOUT re-injecting it.
    * @param {*} message
    * @returns {boolean}
    */
@@ -1465,6 +1468,13 @@
 
       if (message.action === "undo") {
         return Promise.resolve(handleUndo());
+      }
+
+      if (message.action === "ping") {
+        // Cheap presence check for the popup's ensureContentScriptInjected -
+        // answering at all proves this content script is already loaded and
+        // its module-level state (undo snapshot, cancelled flag) is intact.
+        return Promise.resolve({ ok: true });
       }
 
       return undefined;
