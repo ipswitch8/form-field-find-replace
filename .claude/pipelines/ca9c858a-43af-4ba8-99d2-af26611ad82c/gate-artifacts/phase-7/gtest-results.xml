@@ -1,0 +1,142 @@
+<testsuites id="" name="" tests="61" failures="0" skipped="0" errors="0" time="27.41291">
+<testsuite name="backreferences.spec.js" timestamp="2026-09-06T20:47:35.617Z" hostname="firefox" tests="11" failures="0" skipped="0" time="29.65" errors="0">
+<testcase name="phase 4: literal-dollar escaping in plain mode › finding/replacing literal text containing &apos;$5.00&apos; produces exactly &apos;$5.00&apos; unmangled" classname="backreferences.spec.js" time="2.564">
+</testcase>
+<testcase name="phase 4: literal-dollar escaping in plain mode › plain mode treats $&amp; as literal text, never the whole-match token" classname="backreferences.spec.js" time="2.237">
+</testcase>
+<testcase name="phase 4: full substitution grammar in regex mode › supports numbered capture groups ($1, $2, ...)" classname="backreferences.spec.js" time="2.091">
+</testcase>
+<testcase name="phase 4: full substitution grammar in regex mode › supports named capture groups ($&lt;name&gt;) paired with (?&lt;name&gt;...)" classname="backreferences.spec.js" time="2.45">
+</testcase>
+<testcase name="phase 4: full substitution grammar in regex mode › supports $&amp; (whole match)" classname="backreferences.spec.js" time="5.66">
+</testcase>
+<testcase name="phase 4: full substitution grammar in regex mode › supports $` (text before the match)" classname="backreferences.spec.js" time="4.783">
+</testcase>
+<testcase name="phase 4: full substitution grammar in regex mode › supports $&apos; (text after the match)" classname="backreferences.spec.js" time="3.902">
+</testcase>
+<testcase name="phase 4: full substitution grammar in regex mode › supports $$ (literal dollar sign)" classname="backreferences.spec.js" time="3.009">
+</testcase>
+<testcase name="phase 4: backreference validation blocks the replace run › a valid backreference within the pattern&apos;s actual group count is NOT blocked" classname="backreferences.spec.js" time="0.958">
+</testcase>
+<testcase name="phase 4: backreference validation blocks the replace run › a numbered backreference beyond the pattern&apos;s group count blocks the run without touching or firing events on ANY field" classname="backreferences.spec.js" time="1.031">
+</testcase>
+<testcase name="phase 4: backreference validation blocks the replace run › a named backreference with no matching declared group blocks the run" classname="backreferences.spec.js" time="0.965">
+</testcase>
+</testsuite>
+<testsuite name="bulk-fixture.spec.js" timestamp="2026-09-06T20:47:35.617Z" hostname="firefox" tests="1" failures="0" skipped="0" time="1.742" errors="0">
+<testcase name="fixture-bulk.html (phase 2 smoke coverage) › generates exactly 5000 inputs with a declared expected match count" classname="bulk-fixture.spec.js" time="1.742">
+</testcase>
+</testsuite>
+<testsuite name="chunked-progress.spec.js" timestamp="2026-09-06T20:47:35.617Z" hostname="firefox" tests="8" failures="0" skipped="0" time="12.419" errors="0">
+<testcase name="phase 5: chunked replace loop against fixture-bulk.html (5,000 fields) › (a) a full replace run reports the pre-seeded match count" classname="chunked-progress.spec.js" time="1.708">
+</testcase>
+<testcase name="phase 5: chunked replace loop against fixture-bulk.html (5,000 fields) › (b) received progress messages show monotonically increasing `done` values" classname="chunked-progress.spec.js" time="1.698">
+</testcase>
+<testcase name="phase 5: chunked replace loop against fixture-bulk.html (5,000 fields) › (c) cancelling mid-run halts further replacement and reports a partial count strictly less than the total" classname="chunked-progress.spec.js" time="1.685">
+</testcase>
+<testcase name="phase 5: chunked replace loop against fixture-bulk.html (5,000 fields) › (d) undo snapshots are capped, and disabled for a run exceeding the cap" classname="chunked-progress.spec.js" time="1.807">
+</testcase>
+<testcase name="phase 5: chunked replace loop against fixture-bulk.html (5,000 fields) › (d) undo snapshot is built (and not capped) for a run within the cap" classname="chunked-progress.spec.js" time="1.777">
+</testcase>
+<testcase name="phase 5: chunked replace loop against fixture-bulk.html (5,000 fields) › (d) handleCount reports totalFields independent of match count, for the popup&apos;s pre-run undo warning" classname="chunked-progress.spec.js" time="1.502">
+</testcase>
+<testcase name="phase 5: catastrophic-backtracking per-field time budget › a field whose matching takes over the time budget is reported as timedOut, not replaced or skipped" classname="chunked-progress.spec.js" time="1.701">
+</testcase>
+<testcase name="phase 5: regex lastIndex reset across fields (regression guard) › (e) a field with multiple matches has ALL of them replaced, and a short field immediately after a long matching field is not skipped" classname="chunked-progress.spec.js" time="0.541">
+</testcase>
+</testsuite>
+<testsuite name="collect-fields.spec.js" timestamp="2026-09-06T20:47:35.617Z" hostname="firefox" tests="5" failures="0" skipped="0" time="4.783" errors="0">
+<testcase name="collectFields (phase 2) › finds exactly the non-skipped fields in fixture.html" classname="collect-fields.spec.js" time="0.935">
+</testcase>
+<testcase name="collectFields (phase 2) › resolves a missing/unrecognized input type to &apos;text&apos;" classname="collect-fields.spec.js" time="0.91">
+</testcase>
+<testcase name="collectFields (phase 2) › count action returns matches and fields without mutating anything" classname="collect-fields.spec.js" time="0.948">
+</testcase>
+<testcase name="collectFields (phase 2) › field-type filtering excludes unchecked groups before counting" classname="collect-fields.spec.js" time="0.955">
+</testcase>
+<testcase name="collectFields (phase 2) › isValidMessage rejects malformed messages" classname="collect-fields.spec.js" time="1.035">
+</testcase>
+</testsuite>
+<testsuite name="find-replace.spec.js" timestamp="2026-09-06T20:47:35.617Z" hostname="firefox" tests="8" failures="0" skipped="0" time="7.933" errors="0">
+<testcase name="replace path (phase 3) › replace against the controlled-input widget updates its displayed value via the native-setter path" classname="find-replace.spec.js" time="0.939">
+</testcase>
+<testcase name="replace path (phase 3) › a date-field replace producing an invalid value is rolled back to the original value, not blanked" classname="find-replace.spec.js" time="0.961">
+</testcase>
+<testcase name="replace path (phase 3) › a field with no match is left completely untouched - no input/change events fired" classname="find-replace.spec.js" time="1.04">
+</testcase>
+<testcase name="replace path (phase 3) › count and replace share the same matcher - matches agree for the same query" classname="find-replace.spec.js" time="1.008">
+</testcase>
+<testcase name="replace path (phase 3) › regex mode compile errors are returned via the error field, not thrown" classname="find-replace.spec.js" time="1.053">
+</testcase>
+<testcase name="replace path (phase 3) › whole-word mode only replaces whole-word matches" classname="find-replace.spec.js" time="1">
+</testcase>
+<testcase name="replace path (phase 3) › contenteditable replacement walks text nodes and preserves nested markup" classname="find-replace.spec.js" time="0.946">
+</testcase>
+<testcase name="replace path (phase 3) › a destructive replace never touches password, hidden or file fields" classname="find-replace.spec.js" time="0.986">
+</testcase>
+</testsuite>
+<testsuite name="listener-registration.spec.js" timestamp="2026-09-06T20:47:35.617Z" hostname="firefox" tests="4" failures="0" skipped="0" time="5.65" errors="0">
+<testcase name="message listener registration guard (phase 4) › does not register on an extension page even when the runtime API exists" classname="listener-registration.spec.js" time="1.039">
+</testcase>
+<testcase name="message listener registration guard (phase 4) › does register on ordinary page schemes when the runtime API exists" classname="listener-registration.spec.js" time="1.02">
+</testcase>
+<testcase name="message listener registration guard (phase 4) › does not register when the runtime API is absent or incomplete" classname="listener-registration.spec.js" time="0.94">
+</testcase>
+<testcase name="message listener registration guard (phase 4) › a stubbed runtime API on a file:// page really receives an addListener call" classname="listener-registration.spec.js" time="2.651">
+</testcase>
+</testsuite>
+<testsuite name="preview.spec.js" timestamp="2026-09-06T20:47:35.617Z" hostname="firefox" tests="8" failures="0" skipped="0" time="15.013" errors="0">
+<testcase name="phase 4: live first-match preview › computeFirstMatchPreview is exposed via the shared content-script matcher, loaded by popup.html" classname="preview.spec.js" time="2.447">
+</testcase>
+<testcase name="phase 4: live first-match preview › an empty find field shows no preview text" classname="preview.spec.js" time="2.608">
+</testcase>
+<testcase name="phase 4: live first-match preview › plain-mode typing updates the preview (debounced) with the substituted sample text" classname="preview.spec.js" time="3.093">
+</testcase>
+<testcase name="phase 4: live first-match preview › a find string with no match in the sample text is reported as no match" classname="preview.spec.js" time="1.276">
+</testcase>
+<testcase name="phase 4: live first-match preview › an invalid regex is reported as an error, not thrown" classname="preview.spec.js" time="1.421">
+</testcase>
+<testcase name="phase 4: live first-match preview › regex mode preview reflects numbered capture-group substitution using the shared matcher" classname="preview.spec.js" time="1.41">
+</testcase>
+<testcase name="phase 4: live first-match preview › a backreference/group mismatch surfaces as an error in the preview before Replace all is ever run" classname="preview.spec.js" time="1.364">
+</testcase>
+<testcase name="phase 4: live first-match preview › rapid keystrokes are debounced - preview does not thrash and settles on the final input" classname="preview.spec.js" time="1.394">
+</testcase>
+</testsuite>
+<testsuite name="shadow-iframe.spec.js" timestamp="2026-09-06T20:47:35.617Z" hostname="firefox" tests="8" failures="0" skipped="0" time="7.447" errors="0">
+<testcase name="phase 6: shadow DOM and iframe traversal › a shadow-root field is found and correctly replaced" classname="shadow-iframe.spec.js" time="0.853">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › closed shadow roots are skipped without error" classname="shadow-iframe.spec.js" time="0.856">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › a same-origin iframe field is NOT found when include-iframes is unchecked" classname="shadow-iframe.spec.js" time="0.903">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › a same-origin iframe field is found and correctly replaced when include-iframes is checked - exercising the cross-document constructor path" classname="shadow-iframe.spec.js" time="0.971">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › collectFields directly: includeIframes toggles whether the iframe field is enumerated at all" classname="shadow-iframe.spec.js" time="0.986">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › the cross-origin iframe causes no thrown error and does not abort the run, even with include-iframes checked" classname="shadow-iframe.spec.js" time="0.967">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › password fields nested in a shadow root and a same-origin iframe are never collected or touched" classname="shadow-iframe.spec.js" time="0.974">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › a frame whose contentDocument getter THROWS is skipped quietly and the run continues" classname="shadow-iframe.spec.js" time="0.937">
+</testcase>
+</testsuite>
+<testsuite name="undo.spec.js" timestamp="2026-09-06T20:47:35.617Z" hostname="firefox" tests="8" failures="0" skipped="0" time="8.769" errors="0">
+<testcase name="phase 7: undo - full run restores everything › full-run undo restores all changed fields, including contenteditable nested markup" classname="undo.spec.js" time="0.958">
+</testcase>
+<testcase name="phase 7: undo - full run restores everything › full-run undo restores a field inside an open shadow root and a same-origin iframe (cross-realm prototype path)" classname="undo.spec.js" time="0.926">
+</testcase>
+<testcase name="phase 7: undo - full run restores everything › a second replace run replaces the snapshot rather than stacking (one level only)" classname="undo.spec.js" time="0.923">
+</testcase>
+<testcase name="phase 7: undo - partial (cancelled) run › undo after a cancelled run restores exactly the changed subset; untouched fields receive no events" classname="undo.spec.js" time="1.869">
+</testcase>
+<testcase name="phase 7: undo - partial (cancelled) run › undo restores a controlled input through the native-setter path, not a plain assignment" classname="undo.spec.js" time="0.897">
+</testcase>
+<testcase name="phase 7: undo - popup wiring (Undo button enabled/disabled transitions) › Undo button transitions correctly across a replace run -&gt; cancel -&gt; undo cycle" classname="undo.spec.js" time="1.391">
+</testcase>
+<testcase name="phase 7: undo - popup wiring (Undo button enabled/disabled transitions) › a completed run with zero changed fields leaves Undo disabled" classname="undo.spec.js" time="0.966">
+</testcase>
+<testcase name="phase 7: UI text states one level of undo is supported › popup.html contains text stating one level of undo is supported" classname="undo.spec.js" time="0.839">
+</testcase>
+</testsuite>
+</testsuites>

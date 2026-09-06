@@ -460,9 +460,16 @@ async function handleReplaceAll() {
 
   setProgress(response.done ?? response.total ?? 0, response.total ?? 0);
 
-  if ((response.replaced ?? 0) > 0 && response.undoAvailable !== false) {
-    hasUndoableChange = true;
-  }
+  // Phase 7: reflects THIS run's outcome unconditionally (not just "set it
+  // to true sometimes") - starting a new replace run replaces the previous
+  // undo snapshot in the content script (one level only, never a stack), so
+  // a run that changed nothing must also clear any undo state left over
+  // from a PRIOR run, not merely leave a stale "enabled" Undo button
+  // pointing at a snapshot that no longer exists. Applies identically
+  // whether this run completed normally or was cancelled partway through -
+  // `response.replaced` already reflects only the fields actually changed
+  // before cancellation in that case.
+  hasUndoableChange = (response.replaced ?? 0) > 0 && response.undoAvailable !== false;
   updateButtonStates();
 
   const wallMs = Math.round(response.wallMs ?? 0);

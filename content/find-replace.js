@@ -50,6 +50,36 @@
  * window's constructor - see isTextareaElement/isInputElement/
  * getOwnerWindow below and their use in describeField/setNativeValue.
  *
+ * Phase 7 scope: wiring up the one-level Undo action itself. The snapshot
+ * array (lastUndoSnapshot) was already built and capped in phase 5; this
+ * phase makes handleUndo() actually restore from it. Two things matter
+ * here that phase 5 didn't need to worry about:
+ *   - Restoration goes through the SAME native-setter-plus-events path as
+ *     replace (setNativeValue) for input/textarea fields - never a direct
+ *     `.value = x` - for the identical controlled-input reason as phase 3,
+ *     and setNativeValue already resolves the prototype via the element's
+ *     own ownerDocument.defaultView (getOwnerWindow), so undo is correct
+ *     for a snapshotted element living in an iframe or shadow root too.
+ *   - A contenteditable snapshot entry cannot just be a flattened
+ *     `textContent` string - restoring via textContent would destroy any
+ *     nested markup (<b>, <span>, ...), exactly what the replace path is
+ *     careful to avoid. Instead, replaceContentEditableTextNodes() now
+ *     returns the list of individual TEXT NODES it actually changed, each
+ *     paired with its pre-mutation nodeValue, and that list - not a
+ *     flattened string - is what's stored in the undo snapshot entry for a
+ *     contenteditable field. Undo restores each changed node's nodeValue
+ *     directly (the same kind of write replace itself performs) without
+ *     touching the surrounding element structure at all, so nested markup
+ *     is untouched, and untouched nodes never receive a write.
+ * Because the snapshot only ever contains entries for fields that were
+ * ACTUALLY replaced (pushed at the same point in handleReplace's loop as
+ * phase 5 already did), a cancelled run's snapshot naturally contains only
+ * the subset changed before cancellation - undo requires no separate
+ * cancellation-awareness beyond restoring the snapshot as recorded.
+ * Starting a new replace run overwrites `lastUndoSnapshot` (one level of
+ * undo, never a stack); invoking undo itself also clears it afterward, so a
+ * second, immediate undo has nothing left to restore.
+ *
  * Testability: Playwright cannot easily load a Firefox extension, so tests
  * inject this file into a fixture page directly via addScriptTag/evaluate.
  * To support both that and the real extension:
@@ -931,15 +961,23 @@
    * `innerHTML`, which would destroy nested markup and any editor state.
    * Dispatches a single bubbling `input` event on the host afterward if
    * anything actually changed.
+   *
+   * Also returns the list of TEXT NODES actually changed, each paired with
+   * its pre-mutation `nodeValue` - this is what phase 7's undo snapshot
+   * stores for a contenteditable field, since restoring via a flattened
+   * `textContent` string would destroy nested markup (<b>, <span>, ...).
+   * Only nodes that genuinely changed are included, so an untouched node
+   * never receives a write during undo either.
    * @param {Element} el
    * @param {RegExp} regex
    * @param {string} replaceStr
-   * @returns {boolean} whether any text node was modified
+   * @returns {{changed: boolean, nodes: Array<{node: Text, value: string}>}}
    */
   function replaceContentEditableTextNodes(el, regex, replaceStr) {
     const doc = el.ownerDocument || document;
     const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
     let changed = false;
+    const changedNodes = [];
 
     let node = walker.nextNode();
     while (node) {
@@ -949,6 +987,7 @@
         if (regex.test(text)) {
           const newText = text.replace(regex, replaceStr);
           if (newText !== text) {
+            changedNodes.push({ node, value: text }); // pre-mutation value
             node.nodeValue = newText;
             changed = true;
           }
@@ -961,7 +1000,7 @@
       el.dispatchEvent(new InputEvent("input", { bubbles: true }));
     }
 
-    return changed;
+    return { changed, nodes: changedNodes };
   }
 
   /**
@@ -976,7 +1015,7 @@
    * @param {{el: Element, kind: string, type: string, originalValue: string}} field
    * @param {RegExp} regex
    * @param {string} effectiveReplace
-   * @returns {{matched: boolean, matchCount: number, replaced: boolean, skippedReason: string|null, timedOut: boolean}}
+   * @returns {{matched: boolean, matchCount: number, replaced: boolean, skippedReason: string|null, timedOut: boolean, changedNodes: Array<{node: Text, value: string}>|null}}
    */
   function processField(field, regex, effectiveReplace) {
     const fieldStart = now();
@@ -986,19 +1025,21 @@
     const n = countMatches(regex, value || "");
 
     if (now() - fieldStart > FIELD_TIME_BUDGET_MS) {
-      return { matched: false, matchCount: 0, replaced: false, skippedReason: null, timedOut: true };
+      return { matched: false, matchCount: 0, replaced: false, skippedReason: null, timedOut: true, changedNodes: null };
     }
 
     if (n === 0) {
       // No match: never touch this field - no setter call, no events.
-      return { matched: false, matchCount: 0, replaced: false, skippedReason: null, timedOut: false };
+      return { matched: false, matchCount: 0, replaced: false, skippedReason: null, timedOut: false, changedNodes: null };
     }
 
     let result;
+    let changedNodes = null;
     if (field.kind === "contenteditable") {
       regex.lastIndex = 0;
-      const changed = replaceContentEditableTextNodes(field.el, regex, effectiveReplace);
-      result = { replaced: changed, skippedReason: null };
+      const ceResult = replaceContentEditableTextNodes(field.el, regex, effectiveReplace);
+      result = { replaced: ceResult.changed, skippedReason: null };
+      changedNodes = ceResult.nodes;
     } else {
       regex.lastIndex = 0;
       result = replaceInputField(field, regex, effectiveReplace);
@@ -1009,10 +1050,10 @@
       // cannot be un-executed mid-flight - see FIELD_TIME_BUDGET_MS's
       // comment. Report it as timed out rather than a normal
       // replaced/skipped outcome, and keep it out of the undo snapshot.
-      return { matched: true, matchCount: n, replaced: false, skippedReason: null, timedOut: true };
+      return { matched: true, matchCount: n, replaced: false, skippedReason: null, timedOut: true, changedNodes: null };
     }
 
-    return { matched: true, matchCount: n, replaced: result.replaced, skippedReason: result.skippedReason, timedOut: false };
+    return { matched: true, matchCount: n, replaced: result.replaced, skippedReason: result.skippedReason, timedOut: false, changedNodes };
   }
 
   /**
@@ -1158,7 +1199,21 @@
           if (result.replaced) {
             replaced++;
             if (undoEnabledForRun && undoSnapshot.length < undoSnapshotCap) {
-              undoSnapshot.push({ el: field.el, value: field.originalValue });
+              // Two entry shapes, discriminated by `kind`: an input/textarea
+              // entry stores the flat original VALUE (restored via
+              // setNativeValue - phase 7); a contenteditable entry stores
+              // the specific TEXT NODES this field actually changed, each
+              // with its pre-mutation nodeValue, so undo never has to
+              // flatten (and thereby destroy) nested markup. Either way the
+              // value being stored was captured strictly before this
+              // field's own mutation ran (originalValue at collection time,
+              // changedNodes' `value` at the point replaceContentEditableTextNodes
+              // read each node just before overwriting it).
+              if (field.kind === "contenteditable") {
+                undoSnapshot.push({ el: field.el, kind: "contenteditable", nodes: result.changedNodes });
+              } else {
+                undoSnapshot.push({ el: field.el, kind: "value", value: field.originalValue });
+              }
             }
           } else if (result.skippedReason) {
             skipped++;
@@ -1197,6 +1252,79 @@
       wallMs: now() - startTime,
       error: null,
     };
+  }
+
+  /**
+   * Restore a single contenteditable undo entry: write each changed text
+   * node's pre-mutation `nodeValue` back, directly - the same kind of write
+   * replaceContentEditableTextNodes itself performs, never a `textContent`
+   * reassignment, which would flatten and destroy nested markup (<b>,
+   * <span>, ...). A node that was never in the changed set is never
+   * touched at all. Dispatches a single bubbling `input` event on the host
+   * afterward if anything was actually restored, mirroring the event the
+   * original replace fired.
+   * @param {{el: Element, nodes: Array<{node: Text, value: string}>}} entry
+   */
+  function undoContentEditableEntry(entry) {
+    let changed = false;
+    const nodes = entry.nodes || [];
+    for (let i = 0; i < nodes.length; i++) {
+      const { node, value } = nodes[i];
+      if (node.nodeValue !== value) {
+        node.nodeValue = value;
+        changed = true;
+      }
+    }
+    if (changed) {
+      entry.el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    }
+  }
+
+  /**
+   * Handle the "undo" action: restore every entry in `lastUndoSnapshot` -
+   * the most recently built replace run's snapshot, whether that run
+   * completed or was cancelled partway through (the snapshot only ever
+   * contains fields that were ACTUALLY replaced before that point, so a
+   * cancelled run's undo naturally restores exactly that subset, never the
+   * full originally-collected set).
+   *
+   * Input/textarea entries restore via setNativeValue() - the SAME
+   * native-setter-plus-input/change-event path replace itself uses, never
+   * a direct `.value` assignment, for the identical controlled-input
+   * reason as phase 3. setNativeValue resolves the prototype via the
+   * element's own ownerDocument.defaultView (getOwnerWindow), so this is
+   * correct whether the snapshotted element lives in the top document, an
+   * open shadow root, or a same-origin iframe.
+   *
+   * Contenteditable entries restore per-text-node via
+   * undoContentEditableEntry() above, never via a flattened `textContent`
+   * write, so nested markup survives.
+   *
+   * One level of undo only: the snapshot is cleared after a successful
+   * undo, so an immediate second "undo" message has nothing left to
+   * restore (and the popup separately disables its Undo button once this
+   * resolves).
+   * @returns {{ok: boolean, restored: number, error: string|null}}
+   */
+  function handleUndo() {
+    const snapshot = lastUndoSnapshot;
+    let restored = 0;
+
+    for (let i = 0; i < snapshot.length; i++) {
+      const entry = snapshot[i];
+      if (entry.kind === "contenteditable") {
+        undoContentEditableEntry(entry);
+      } else {
+        setNativeValue(entry.el, entry.value);
+      }
+      restored++;
+    }
+
+    // One level only - clear after restoring, so a second undo is a no-op.
+    lastUndoSnapshot = [];
+    lastUndoAvailable = true;
+
+    return { ok: true, restored, error: null };
   }
 
   // ---- Message handling -----------------------------------------------------
@@ -1335,7 +1463,10 @@
         return Promise.resolve({ ok: true });
       }
 
-      // undo is implemented in phase 7.
+      if (message.action === "undo") {
+        return Promise.resolve(handleUndo());
+      }
+
       return undefined;
     });
   }
@@ -1387,6 +1518,9 @@
       getUndoSnapshotLength,
       setUndoSnapshotCapForTesting,
       resetUndoSnapshotCapForTesting,
+      // Phase 7 additions: the Undo action itself.
+      handleUndo,
+      undoContentEditableEntry,
       // Exposed so the catastrophic-backtracking guard can be exercised
       // deterministically with a fake, controllably-slow "regex" object
       // instead of a genuinely pathological pattern (whose real timing is
