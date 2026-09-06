@@ -1,32 +1,46 @@
 <!DOCTYPE html>
 <!--
-  Form Field Find & Replace - test fixture (phase 2).
+  Form Field Find & Replace - test fixture (phase 2 + phase 3).
 
   Expected counts, computed against content/find-replace.js's collectFields
   + describeField rules:
 
     Non-skipped fields collected by collectFields(document) with NO
-    field-type filtering applied: 4
+    field-type filtering applied: 11
       - #text-input           (kind: input,  type: text)
       - #email-input          (kind: input,  type: email)
       - #textarea-input       (kind: textarea, type: textarea)
       - #contenteditable-div  (kind: contenteditable, type: contenteditable)
+      - #number-input         (kind: input,  type: number)
+      - #date-input           (kind: input,  type: date)
+      - #datetime-local-input (kind: input,  type: datetime-local)
+      - #month-input          (kind: input,  type: month)
+      - #week-input           (kind: input,  type: week)
+      - #time-input           (kind: input,  type: time)
+      - #controlled-input     (kind: input,  type: text)
 
     Always-skipped (must NOT appear in collectFields output):
       - #password-input  (type="password")
       - #disabled-input  (disabled)
       - #readonly-input  (readonly)
 
-    Seeded text, for match-count assertions in later phases (the needle
-    "hello", case-insensitive, plain mode):
+    Seeded text, for match-count assertions (the needle "hello",
+    case-insensitive, plain mode):
       - #text-input value="hello world hello"                -> 2 matches
       - #email-input value="hello@example.com"                -> 1 match
       - #textarea-input text="hello there, hello again"       -> 2 matches
       - #contenteditable-div textContent "hello world hello there" -> 2 matches
-      Total across the 4 non-skipped fields: 7 matches in 4 fields.
+      Total across those 4 fields: 7 matches in 4 fields.
 
     The password/disabled/readonly fields also contain "hello" in their
     value, specifically to prove those matches are NEVER counted or touched.
+
+    The number/date/datetime-local/month/week/time inputs and the
+    controlled-input widget (added in phase 3) are prefilled with values
+    that do NOT contain "hello", so the "hello" match-count assertions
+    above are unaffected by their addition - they exist to exercise the
+    replace path's native-setter and format-validation-rollback behavior
+    instead (see test/find-replace.spec.js).
 -->
 <html lang="en">
 <head>
@@ -93,5 +107,120 @@
     value="hello readonly"
     readonly
   />
+
+  <!-- Phase 3: numeric/date input types, prefilled with valid values, to
+       exercise the read-back/rollback format-validation path. -->
+  <form id="numeric-date-form" data-testid="numeric-date-form">
+    <label for="number-input">Number</label>
+    <input
+      type="number"
+      id="number-input"
+      data-testid="number-input"
+      name="number-input"
+      value="42"
+    />
+
+    <label for="date-input">Date</label>
+    <input
+      type="date"
+      id="date-input"
+      data-testid="date-input"
+      name="date-input"
+      value="2026-03-14"
+    />
+
+    <label for="datetime-local-input">Datetime-local</label>
+    <input
+      type="datetime-local"
+      id="datetime-local-input"
+      data-testid="datetime-local-input"
+      name="datetime-local-input"
+      value="2026-03-14T10:30"
+    />
+
+    <label for="month-input">Month</label>
+    <input
+      type="month"
+      id="month-input"
+      data-testid="month-input"
+      name="month-input"
+      value="2026-03"
+    />
+
+    <label for="week-input">Week</label>
+    <input
+      type="week"
+      id="week-input"
+      data-testid="week-input"
+      name="week-input"
+      value="2026-W11"
+    />
+
+    <label for="time-input">Time</label>
+    <input
+      type="time"
+      id="time-input"
+      data-testid="time-input"
+      name="time-input"
+      value="10:30"
+    />
+  </form>
+
+  <!--
+    Phase 3: a minimal controlled-input widget - a small vanilla imitation
+    of React's own instance-level value tracker. React shadows the native
+    `value` property with an own accessor on the DOM node so it can tell a
+    "silent" programmatic write (e.g. `el.value = x`) apart from a write
+    that goes through the real native prototype setter followed by a
+    genuine `input` event. A silent write is reverted back to the tracked
+    state; a write via the native setter (bypassing this own-property
+    entirely, since it's invoked directly on the prototype's setter
+    function rather than through `el.value = x` property resolution),
+    followed by a real `input` event, is accepted into state and stays.
+
+    This proves the extension's replace path must use the native-setter
+    pattern - a plain `el.value = x` assignment gets silently reverted by
+    this widget, exactly as it would be by React.
+  -->
+  <label for="controlled-input">Controlled-input widget</label>
+  <input
+    type="text"
+    id="controlled-input"
+    data-testid="controlled-input"
+    name="controlled-input"
+    value="state one"
+  />
+  <script>
+    (function () {
+      var el = document.getElementById("controlled-input");
+      var nativeDescriptor = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value"
+      );
+      var internalState = nativeDescriptor.get.call(el);
+
+      Object.defineProperty(el, "value", {
+        configurable: true,
+        enumerable: true,
+        get: function () {
+          return nativeDescriptor.get.call(el);
+        },
+        set: function () {
+          // A "silent" write via plain property assignment never reaches
+          // here through the native setter path - revert to the last
+          // known-good state, exactly like a React controlled input
+          // ignoring an out-of-band DOM mutation.
+          nativeDescriptor.set.call(el, internalState);
+        },
+      });
+
+      el.addEventListener("input", function () {
+        // A real input event only follows a native-setter write (which
+        // bypasses the defineProperty above entirely), so the current
+        // native value is legitimate - accept it into state.
+        internalState = nativeDescriptor.get.call(el);
+      });
+    })();
+  </script>
 </body>
 </html>

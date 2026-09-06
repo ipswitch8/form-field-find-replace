@@ -2,9 +2,19 @@
  * Form Field Find & Replace - content script.
  *
  * Phase 2 scope: field collection, always-skip rules, field-type filtering,
- * and the "count" message action. Matching is shared between count and (in
- * phase 3) replace, but no mutation of any field happens here - counting
- * must never write to the DOM.
+ * and the "count" message action.
+ *
+ * Phase 3 scope: the replacement path. count and replace share ONE matcher
+ * (buildMatcher + countMatches) - replace never builds its own RegExp.
+ * Replacement writes go through the native prototype setter (so React and
+ * other controlled-input patterns notice), contenteditable is mutated by
+ * walking text nodes (never innerHTML), and the numeric/date input types
+ * get a read-back-and-rollback pass so a rejected value never leaves the
+ * field blank. Fields with zero matches are never touched - no setter call,
+ * no events. Chunking/progress/cancel (phase 5), regex backreferences and
+ * the match preview (phase 4), shadow DOM/iframe recursion (phase 6), and
+ * undo (phase 7) are explicitly out of scope here; replace is a single
+ * straightforward pass for now.
  *
  * Testability: Playwright cannot easily load a Firefox extension, so tests
  * inject this file into a fixture page directly via addScriptTag/evaluate.
@@ -295,6 +305,175 @@
     return count;
   }
 
+  // ---- Replacement --------------------------------------------------------
+
+  /**
+   * Input/textarea types whose `value` setter silently rejects anything
+   * that isn't a valid value for that type, leaving `value` as "". These
+   * require a read-back-and-rollback pass after assignment.
+   */
+  const VALIDATED_INPUT_TYPES = new Set(NUMERIC_DATE_INPUT_TYPES);
+
+  /**
+   * Assign a new value to an <input> or <textarea> via the native prototype
+   * setter (never a plain `el.value = x`, which React and other
+   * controlled-input patterns silently ignore), then fire the same
+   * input/change events a real user edit would produce.
+   * @param {HTMLInputElement|HTMLTextAreaElement} el
+   * @param {string} newValue
+   */
+  function setNativeValue(el, newValue) {
+    const proto =
+      el instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
+    descriptor.set.call(el, newValue);
+    el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  /**
+   * Replace matches of `regex` in a single input/textarea field, applying
+   * the format read-back/rollback pass for the numeric/date input types.
+   * Never called for a field with zero matches - the caller checks that.
+   * @param {{el: Element, type: string}} field
+   * @param {RegExp} regex
+   * @param {string} replaceStr
+   * @returns {{replaced: boolean, skippedReason: string|null}}
+   */
+  function replaceInputField(field, regex, replaceStr) {
+    const el = field.el;
+    const originalValue = el.value;
+    const newValue = originalValue.replace(regex, replaceStr);
+
+    if (newValue === originalValue) {
+      // Matched, but substitution produced an identical string - nothing to
+      // write, so don't fire events over nothing.
+      return { replaced: false, skippedReason: null };
+    }
+
+    setNativeValue(el, newValue);
+
+    if (VALIDATED_INPUT_TYPES.has(field.type)) {
+      if (el.value !== newValue) {
+        // The browser silently rejected the new value (invalid format for
+        // this input type) and left `value` as "". Restore the original
+        // rather than leaving the field blank, and report it as skipped.
+        setNativeValue(el, originalValue);
+        return { replaced: false, skippedReason: "invalid format" };
+      }
+    }
+
+    return { replaced: true, skippedReason: null };
+  }
+
+  /**
+   * Replace matches of `regex` inside a contenteditable host by walking its
+   * text nodes and setting `nodeValue` per node - never reassigning
+   * `innerHTML`, which would destroy nested markup and any editor state.
+   * Dispatches a single bubbling `input` event on the host afterward if
+   * anything actually changed.
+   * @param {Element} el
+   * @param {RegExp} regex
+   * @param {string} replaceStr
+   * @returns {boolean} whether any text node was modified
+   */
+  function replaceContentEditableTextNodes(el, regex, replaceStr) {
+    const doc = el.ownerDocument || document;
+    const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+    let changed = false;
+
+    let node = walker.nextNode();
+    while (node) {
+      const text = node.nodeValue;
+      if (text) {
+        regex.lastIndex = 0;
+        if (regex.test(text)) {
+          const newText = text.replace(regex, replaceStr);
+          if (newText !== text) {
+            node.nodeValue = newText;
+            changed = true;
+          }
+        }
+      }
+      node = walker.nextNode();
+    }
+
+    if (changed) {
+      el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    }
+
+    return changed;
+  }
+
+  /**
+   * Handle the "replace" action: collect fields, apply field-type
+   * filtering, build the SAME shared matcher used by handleCount, and
+   * mutate only the fields that actually match. Fields with zero matches
+   * are never touched - no setter call, no events.
+   * @param {{find: string, replace: string, options: object, fieldTypes: object}} message
+   * @returns {{ok: boolean, matches: number, fields: number, replaced: number, skipped: number, error: string|null}}
+   */
+  function handleReplace(message) {
+    const replaceStr = typeof message.replace === "string" ? message.replace : "";
+
+    if (message.find === "") {
+      return { ok: true, matches: 0, fields: 0, replaced: 0, skipped: 0, error: null };
+    }
+
+    const { regex, error } = buildMatcher(message.find, message.options);
+    if (error) {
+      return { ok: false, matches: 0, fields: 0, replaced: 0, skipped: 0, error };
+    }
+
+    const collected = Array.from(collectFields(document));
+    const filtered = filterByTypes(collected, message.fieldTypes);
+
+    let totalMatches = 0;
+    let fieldsWithMatches = 0;
+    let replaced = 0;
+    let skipped = 0;
+
+    for (let i = 0; i < filtered.length; i++) {
+      const field = filtered[i];
+      const value = field.kind === "contenteditable" ? field.el.textContent : field.el.value;
+      const n = countMatches(regex, value || "");
+      if (n === 0) {
+        // No match: never touch this field - no setter call, no events.
+        continue;
+      }
+
+      totalMatches += n;
+      fieldsWithMatches++;
+
+      if (field.kind === "contenteditable") {
+        regex.lastIndex = 0;
+        const changed = replaceContentEditableTextNodes(field.el, regex, replaceStr);
+        if (changed) {
+          replaced++;
+        }
+      } else {
+        regex.lastIndex = 0;
+        const result = replaceInputField(field, regex, replaceStr);
+        if (result.replaced) {
+          replaced++;
+        } else if (result.skippedReason) {
+          skipped++;
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      matches: totalMatches,
+      fields: fieldsWithMatches,
+      replaced,
+      skipped,
+      error: null,
+    };
+  }
+
   // ---- Message handling -----------------------------------------------------
 
   const VALID_ACTIONS = new Set(["count", "replace", "undo", "cancel"]);
@@ -387,7 +566,11 @@
         return Promise.resolve(handleCount(message));
       }
 
-      // replace/undo/cancel are implemented in later phases.
+      if (message.action === "replace") {
+        return Promise.resolve(handleReplace(message));
+      }
+
+      // undo/cancel are implemented in later phases.
       return undefined;
     });
   }
@@ -407,6 +590,11 @@
       isRenderedVisible,
       handleCount,
       isValidMessage,
+      // Phase 3 additions.
+      setNativeValue,
+      replaceInputField,
+      replaceContentEditableTextNodes,
+      handleReplace,
     };
   }
 })();

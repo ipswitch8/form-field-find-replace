@@ -40,7 +40,7 @@ test.describe("collectFields (phase 2)", () => {
       }));
     });
 
-    expect(result).toHaveLength(4);
+    expect(result).toHaveLength(11);
 
     const ids = result.map((f) => f.id).sort();
     expect(ids).toEqual(
@@ -49,6 +49,13 @@ test.describe("collectFields (phase 2)", () => {
         "email-input",
         "textarea-input",
         "contenteditable-div",
+        "number-input",
+        "date-input",
+        "datetime-local-input",
+        "month-input",
+        "week-input",
+        "time-input",
+        "controlled-input",
       ].sort()
     );
 

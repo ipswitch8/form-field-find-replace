@@ -1,0 +1,36 @@
+<testsuites id="" name="" tests="14" failures="0" skipped="0" errors="0" time="13.85982">
+<testsuite name="bulk-fixture.spec.js" timestamp="2026-09-06T18:33:56.434Z" hostname="firefox" tests="1" failures="0" skipped="0" time="8.673" errors="0">
+<testcase name="fixture-bulk.html (phase 2 smoke coverage) › generates exactly 5000 inputs with a declared expected match count" classname="bulk-fixture.spec.js" time="8.673">
+</testcase>
+</testsuite>
+<testsuite name="collect-fields.spec.js" timestamp="2026-09-06T18:33:56.434Z" hostname="firefox" tests="5" failures="0" skipped="0" time="17.248" errors="0">
+<testcase name="collectFields (phase 2) › finds exactly the non-skipped fields in fixture.html" classname="collect-fields.spec.js" time="3.002">
+</testcase>
+<testcase name="collectFields (phase 2) › resolves a missing/unrecognized input type to &apos;text&apos;" classname="collect-fields.spec.js" time="2.167">
+</testcase>
+<testcase name="collectFields (phase 2) › count action returns matches and fields without mutating anything" classname="collect-fields.spec.js" time="2.536">
+</testcase>
+<testcase name="collectFields (phase 2) › field-type filtering excludes unchecked groups before counting" classname="collect-fields.spec.js" time="5.545">
+</testcase>
+<testcase name="collectFields (phase 2) › isValidMessage rejects malformed messages" classname="collect-fields.spec.js" time="3.998">
+</testcase>
+</testsuite>
+<testsuite name="find-replace.spec.js" timestamp="2026-09-06T18:33:56.434Z" hostname="firefox" tests="8" failures="0" skipped="0" time="11.613" errors="0">
+<testcase name="replace path (phase 3) › replace against the controlled-input widget updates its displayed value via the native-setter path" classname="find-replace.spec.js" time="5.136">
+</testcase>
+<testcase name="replace path (phase 3) › a date-field replace producing an invalid value is rolled back to the original value, not blanked" classname="find-replace.spec.js" time="0.917">
+</testcase>
+<testcase name="replace path (phase 3) › a field with no match is left completely untouched - no input/change events fired" classname="find-replace.spec.js" time="0.838">
+</testcase>
+<testcase name="replace path (phase 3) › count and replace share the same matcher - matches agree for the same query" classname="find-replace.spec.js" time="0.869">
+</testcase>
+<testcase name="replace path (phase 3) › regex mode compile errors are returned via the error field, not thrown" classname="find-replace.spec.js" time="0.827">
+</testcase>
+<testcase name="replace path (phase 3) › whole-word mode only replaces whole-word matches" classname="find-replace.spec.js" time="1.023">
+</testcase>
+<testcase name="replace path (phase 3) › contenteditable replacement walks text nodes and preserves nested markup" classname="find-replace.spec.js" time="0.936">
+</testcase>
+<testcase name="replace path (phase 3) › a destructive replace never touches password, hidden or file fields" classname="find-replace.spec.js" time="1.067">
+</testcase>
+</testsuite>
+</testsuites>
