@@ -3,19 +3,19 @@
   "pipeline_id": "ca9c858a-43af-4ba8-99d2-af26611ad82c",
   "pipeline_generated_at": "2026-09-06T00:00:00Z",
   "pipeline_content_sig": "6449f3cde8c6f43ba4b2f90aaf76677ca4ef635964726e82aad214a2e3d51f75",
-  "current_phase_index": 2,
+  "current_phase_index": 3,
   "phases_complete": [
     "phase-1",
-    "phase-2"
+    "phase-2",
+    "phase-3"
   ],
   "current_gate_results": {
     "karen": true,
     "validator": true,
-    "security-audit": true,
     "test-runner": true
   },
   "awaiting_commit": false,
-  "gate_phase_id": "phase-3",
+  "gate_phase_id": "phase-4",
   "gate_results_by_phase": {
     "phase-1": {
       "validator": true,
@@ -32,7 +32,12 @@
       "validator": true,
       "security-audit": true,
       "test-runner": true
+    },
+    "phase-4": {
+      "karen": true,
+      "validator": true,
+      "test-runner": true
     }
   },
-  "commit_marker_head": "1c6986c23f9a2d4ca675fe04a9bb3092f7785b09"
+  "commit_marker_head": "06f13b7ce0f82819f9204ce64ecd9dd4625d5395"
 }

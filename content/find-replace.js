@@ -11,10 +11,18 @@
  * walking text nodes (never innerHTML), and the numeric/date input types
  * get a read-back-and-rollback pass so a rejected value never leaves the
  * field blank. Fields with zero matches are never touched - no setter call,
- * no events. Chunking/progress/cancel (phase 5), regex backreferences and
- * the match preview (phase 4), shadow DOM/iframe recursion (phase 6), and
- * undo (phase 7) are explicitly out of scope here; replace is a single
- * straightforward pass for now.
+ * no events.
+ *
+ * Phase 4 scope: full String.prototype.replace substitution grammar in
+ * regex mode ($1-$99, $<name>, $&, $`, $', $$), literal-dollar escaping in
+ * plain mode (so "$5.00" round-trips unmangled), backreference validation
+ * against the compiled pattern's actual group count/names BEFORE running a
+ * replace (a mismatch is returned as a distinct error code without ever
+ * entering the replace loop), and computeFirstMatchPreview() for the
+ * popup's live first-match preview - which reuses buildMatcher(), never a
+ * third matching implementation. Chunking/progress/cancel (phase 5), shadow
+ * DOM/iframe recursion (phase 6), and undo (phase 7) remain out of scope
+ * here.
  *
  * Testability: Playwright cannot easily load a Firefox extension, so tests
  * inject this file into a fixture page directly via addScriptTag/evaluate.
@@ -305,6 +313,252 @@
     return count;
   }
 
+  // ---- Backreference validation --------------------------------------------
+
+  /**
+   * Walk a regex source string (the pattern actually compiled and used at
+   * runtime - i.e. post buildMatcher() whole-word wrapping) and count
+   * capturing groups, plus collect the names of any named capture groups
+   * `(?<name>...)`. Skips character classes and escaped characters so a
+   * literal `(` inside `[...]` or `\(` is never miscounted, and skips
+   * non-capturing/lookaround groups (`(?:`, `(?=`, `(?!`, `(?<=`, `(?<!`) -
+   * only plain `(` and named `(?<name>` groups count.
+   * @param {string} source
+   * @returns {{count: number, names: string[]}}
+   */
+  function analyzeGroups(source) {
+    let count = 0;
+    const names = [];
+    let inClass = false;
+
+    for (let i = 0; i < source.length; i++) {
+      const c = source[i];
+
+      if (c === "\\") {
+        i++; // skip the escaped character entirely
+        continue;
+      }
+
+      if (inClass) {
+        if (c === "]") {
+          inClass = false;
+        }
+        continue;
+      }
+
+      if (c === "[") {
+        inClass = true;
+        continue;
+      }
+
+      if (c !== "(") {
+        continue;
+      }
+
+      if (source[i + 1] !== "?") {
+        count++; // plain capturing group
+        continue;
+      }
+
+      // "(?" - could be non-capturing, a lookaround, or a named group.
+      if (
+        source[i + 2] === "<" &&
+        source[i + 3] !== "=" &&
+        source[i + 3] !== "!"
+      ) {
+        const end = source.indexOf(">", i + 3);
+        if (end !== -1) {
+          names.push(source.slice(i + 3, end));
+          count++;
+          i = end;
+        }
+      }
+      // else: (?:...), (?=...), (?!...), (?<=...), (?<!...) - none of these
+      // are capturing, nothing to count.
+    }
+
+    return { count, names };
+  }
+
+  /**
+   * Scan a replacement string for `$N`/`$<name>` tokens that are meant to be
+   * backreferences - as opposed to `$$`, `$&`, `` $` ``, `$'`, which never
+   * need group validation, or a lone `$` with nothing special following,
+   * which is just a literal character.
+   * @param {string} template
+   * @returns {Array<{type: "digits", one: string, two: string|null}|{type: "name", name: string}>}
+   */
+  function scanReplacementTokens(template) {
+    const tokens = [];
+    let i = 0;
+    while (i < template.length) {
+      if (template[i] !== "$") {
+        i++;
+        continue;
+      }
+      const c1 = template[i + 1];
+
+      if (c1 === "$" || c1 === "&" || c1 === "`" || c1 === "'") {
+        i += 2; // handled natively by String.prototype.replace, no group involved
+        continue;
+      }
+
+      if (c1 === "<") {
+        const end = template.indexOf(">", i + 2);
+        if (end === -1) {
+          i++; // stray "$<" with no closing ">" - literal, not a token
+          continue;
+        }
+        tokens.push({ type: "name", name: template.slice(i + 2, end) });
+        i = end + 1;
+        continue;
+      }
+
+      if (c1 >= "0" && c1 <= "9") {
+        const c2 = template[i + 2];
+        const two = c2 >= "0" && c2 <= "9" ? c1 + c2 : null;
+        tokens.push({ type: "digits", one: c1, two });
+        i += 1;
+        continue;
+      }
+
+      i++; // lone "$" - literal
+    }
+    return tokens;
+  }
+
+  /**
+   * Resolve whether a `$N`/`$NN` digit token refers to a group that
+   * actually exists, using the same "prefer two digits, fall back to one
+   * digit" rule String.prototype.replace itself uses - so a token that
+   * resolves here is guaranteed to behave as a real backreference at
+   * runtime, and one that doesn't resolve is guaranteed to be silently
+   * dropped (treated as literal text) instead.
+   * @param {{one: string, two: string|null}} token
+   * @param {number} groupCount
+   * @returns {boolean}
+   */
+  function digitsTokenResolvesToGroup(token, groupCount) {
+    if (token.two) {
+      const n2 = parseInt(token.two, 10);
+      if (n2 >= 1 && n2 <= groupCount) {
+        return true;
+      }
+    }
+    const n1 = parseInt(token.one, 10);
+    return n1 >= 1 && n1 <= groupCount;
+  }
+
+  /**
+   * Validate every `$N`/`$<name>` backreference token in `replaceStr`
+   * against the actual capture groups compiled into `regex`. Called before
+   * a regex-mode replace run so a mismatch is caught and the run is BLOCKED
+   * instead of silently substituting an empty string (or, worse, a subtly
+   * wrong smaller group).
+   * @param {RegExp} regex
+   * @param {string} replaceStr
+   * @returns {{ok: boolean, error: string|null}}
+   */
+  function validateBackreferences(regex, replaceStr) {
+    if (!regex) {
+      return { ok: true, error: null };
+    }
+
+    const { count, names } = analyzeGroups(regex.source);
+    const tokens = scanReplacementTokens(replaceStr);
+    const problems = [];
+
+    for (const token of tokens) {
+      if (token.type === "digits") {
+        if (!digitsTokenResolvesToGroup(token, count)) {
+          problems.push("$" + (token.two || token.one));
+        }
+      } else if (token.type === "name") {
+        if (!names.includes(token.name)) {
+          problems.push("$<" + token.name + ">");
+        }
+      }
+    }
+
+    if (problems.length === 0) {
+      return { ok: true, error: null };
+    }
+
+    const groupsDescription =
+      `pattern has ${count} capture group${count === 1 ? "" : "s"}` +
+      (names.length ? `, named: ${names.join(", ")}` : "");
+
+    return {
+      ok: false,
+      error: `Replacement references undefined group(s): ${problems.join(", ")} (${groupsDescription})`,
+    };
+  }
+
+  /**
+   * Escape `$` to `$$` so a plain (non-regex) mode replacement string is
+   * handed to String.prototype.replace as a pure literal - otherwise a user
+   * typing e.g. "$5.00" would have "$5" silently misread as backreference
+   * syntax and dropped (plain mode never has capture groups).
+   * @param {string} str
+   * @returns {string}
+   */
+  function escapeDollarForReplace(str) {
+    return str.split("$").join("$$");
+  }
+
+  // ---- Live match preview ---------------------------------------------------
+
+  /**
+   * Compute the substitution result of the FIRST match of `find` in
+   * `sampleText`, reusing buildMatcher() - the exact same function the
+   * count and replace paths use, never a third matching implementation.
+   * Used by the popup's live preview so the user can verify capture groups
+   * and backreferences land where expected before running a real replace.
+   * Handles no-match, invalid-regex, empty-find and backreference-mismatch
+   * cases gracefully (never throws).
+   * @param {string} sampleText
+   * @param {string} find
+   * @param {string} replaceStr
+   * @param {{matchCase?: boolean, wholeWord?: boolean, regex?: boolean}} options
+   * @returns {{ok: boolean, hasMatch: boolean, preview: string|null, error: string|null}}
+   */
+  function computeFirstMatchPreview(sampleText, find, replaceStr, options) {
+    const opts = options || {};
+    const text = typeof sampleText === "string" ? sampleText : "";
+    const template = typeof replaceStr === "string" ? replaceStr : "";
+
+    if (typeof find !== "string" || find === "") {
+      return { ok: true, hasMatch: false, preview: null, error: null };
+    }
+
+    const { regex, error } = buildMatcher(find, opts);
+    if (error) {
+      return { ok: false, hasMatch: false, preview: null, error };
+    }
+
+    if (opts.regex) {
+      const validation = validateBackreferences(regex, template);
+      if (!validation.ok) {
+        return { ok: false, hasMatch: false, preview: null, error: validation.error };
+      }
+    }
+
+    regex.lastIndex = 0;
+    const match = regex.exec(text);
+    if (!match) {
+      return { ok: true, hasMatch: false, preview: null, error: null };
+    }
+
+    const effectiveTemplate = opts.regex ? template : escapeDollarForReplace(template);
+    // Clone without the "g" flag so String.prototype.replace only touches
+    // this first match - the shared matcher's regex is always global (and
+    // stateful via lastIndex).
+    const singleRegex = new RegExp(regex.source, regex.flags.replace("g", ""));
+    const preview = text.replace(singleRegex, effectiveTemplate);
+
+    return { ok: true, hasMatch: true, preview, error: null };
+  }
+
   // ---- Replacement --------------------------------------------------------
 
   /**
@@ -417,15 +671,52 @@
    */
   function handleReplace(message) {
     const replaceStr = typeof message.replace === "string" ? message.replace : "";
+    const options = message.options || {};
 
     if (message.find === "") {
       return { ok: true, matches: 0, fields: 0, replaced: 0, skipped: 0, error: null };
     }
 
-    const { regex, error } = buildMatcher(message.find, message.options);
+    const { regex, error } = buildMatcher(message.find, options);
     if (error) {
-      return { ok: false, matches: 0, fields: 0, replaced: 0, skipped: 0, error };
+      return {
+        ok: false,
+        matches: 0,
+        fields: 0,
+        replaced: 0,
+        skipped: 0,
+        error,
+        code: "invalid-regex",
+      };
     }
+
+    if (options.regex) {
+      const validation = validateBackreferences(regex, replaceStr);
+      if (!validation.ok) {
+        // Distinct warning/error code path: returns BEFORE collecting any
+        // fields or entering the replace loop below, so nothing is ever
+        // mutated when the backreferences don't match the pattern's actual
+        // groups.
+        return {
+          ok: false,
+          matches: null,
+          fields: null,
+          replaced: 0,
+          skipped: 0,
+          error: validation.error,
+          code: "backreference-mismatch",
+        };
+      }
+    }
+
+    // Plain mode: escape "$" to "$$" so the replacement is passed through to
+    // String.prototype.replace as a pure literal (no backreference grammar
+    // applies - plain mode never has capture groups). Regex mode: pass the
+    // user's replacement straight through so the full substitution grammar
+    // ($1-$99, $<name>, $&, $`, $', $$) works.
+    const effectiveReplace = options.regex
+      ? replaceStr
+      : escapeDollarForReplace(replaceStr);
 
     const collected = Array.from(collectFields(document));
     const filtered = filterByTypes(collected, message.fieldTypes);
@@ -449,13 +740,13 @@
 
       if (field.kind === "contenteditable") {
         regex.lastIndex = 0;
-        const changed = replaceContentEditableTextNodes(field.el, regex, replaceStr);
+        const changed = replaceContentEditableTextNodes(field.el, regex, effectiveReplace);
         if (changed) {
           replaced++;
         }
       } else {
         regex.lastIndex = 0;
-        const result = replaceInputField(field, regex, replaceStr);
+        const result = replaceInputField(field, regex, effectiveReplace);
         if (result.replaced) {
           replaced++;
         } else if (result.skippedReason) {
@@ -540,11 +831,36 @@
   // Guard the real listener registration behind an extension-API check so
   // this file can also be injected standalone into a plain fixture page by
   // the test harness without throwing.
+  //
+  // The second condition matters: popup.html loads this same file to reuse the
+  // shared matcher for its live preview, and inside the popup browser.runtime
+  // IS defined. Without the extension-page check the popup would register a
+  // handler that answers count/replace against the POPUP's own DOM. It is
+  // mostly inert today because the popup addresses the tab via
+  // tabs.sendMessage, but a runtime.sendMessage broadcast would reach it and
+  // get an answer computed from the wrong document. Content scripts run on the
+  // page's own URL, so an extension-scheme location means we are NOT a content
+  // script and must not register.
+  // Extracted as a pure predicate so it is directly testable. Every Playwright
+  // fixture loads over file:// with no `browser` global, so an inline condition
+  // here would never be exercised by any test.
+  function shouldRegisterMessageListener(protocol, browserApi) {
+    const isExtensionPage =
+      protocol === "moz-extension:" || protocol === "chrome-extension:";
+    return (
+      !isExtensionPage &&
+      !!browserApi &&
+      !!browserApi.runtime &&
+      !!browserApi.runtime.onMessage &&
+      typeof browserApi.runtime.onMessage.addListener === "function"
+    );
+  }
+
   if (
-    typeof browser !== "undefined" &&
-    browser.runtime &&
-    browser.runtime.onMessage &&
-    typeof browser.runtime.onMessage.addListener === "function"
+    shouldRegisterMessageListener(
+      typeof location !== "undefined" ? location.protocol : "",
+      typeof browser !== "undefined" ? browser : null
+    )
   ) {
     browser.runtime.onMessage.addListener((message, sender) => {
       // Ignore anything not sent by this same extension (e.g. a page script
@@ -595,6 +911,15 @@
       replaceInputField,
       replaceContentEditableTextNodes,
       handleReplace,
+      // Phase 4 additions: backreference validation and the live preview.
+      analyzeGroups,
+      scanReplacementTokens,
+      validateBackreferences,
+      escapeDollarForReplace,
+      computeFirstMatchPreview,
+      // Registration guard, exposed so the extension-page case is testable
+      // without an actual moz-extension:// document.
+      shouldRegisterMessageListener,
     };
   }
 })();

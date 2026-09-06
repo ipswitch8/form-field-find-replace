@@ -264,3 +264,8 @@ progress {
 #status-line.status-error {
   color: var(--danger);
 }
+
+#match-preview.status-error {
+  color: var(--danger);
+  border-color: var(--danger);
+}

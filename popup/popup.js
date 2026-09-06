@@ -2,9 +2,16 @@
  * Form Field Find & Replace - popup logic.
  *
  * Phase 1 scope: UI shell, persistence to storage.local, keyboard handling,
- * and button wiring. The content script (content/find-replace.js) does not
- * exist yet - message sends are wrapped so they fail gracefully with a
- * status-line message rather than throwing, until phase 2 lands.
+ * and button wiring.
+ *
+ * Phase 4 scope: the live first-match preview (updatePreview/
+ * schedulePreviewUpdate below). It calls window.__ffr.computeFirstMatchPreview,
+ * which content/find-replace.js exposes - popup.html loads that file
+ * directly ahead of this one purely so this script can reuse its exact
+ * buildMatcher()-based matching logic without a round trip to the page and
+ * without a second, duplicated matcher implementation. Backreference
+ * validation and the group-mismatch warning live in that same shared file
+ * and surface here via the normal response.error path in handleReplaceAll.
  *
  * Vanilla JS only. No frameworks, no build step, no eval/new Function.
  * No network calls, no telemetry, no analytics.
@@ -72,6 +79,91 @@ const fieldTypeCheckboxes = Array.from(
 
 let runInFlight = false;
 let hasUndoableChange = false;
+
+// ---- Live match preview (phase 4) --------------------------------------
+
+// The popup cannot reach the page's actual field values without a round
+// trip through the content script, and doing that on every keystroke would
+// be neither simple nor responsive. Instead the preview runs the user's
+// find/replace strings against this fixed, representative sample of common
+// field content (a name, an email, a phone number, a date, a dollar
+// amount, an order number) - enough surface for $1-$99, $<name>, $&, $`,
+// $', and $$ to all have something realistic to land on. Computing against
+// this fixed string can never mutate anything on the page.
+const PREVIEW_SAMPLE_TEXT =
+  "Contact Jane Doe at jane.doe@example.com or 555-123-4567. " +
+  "Order #12345 for $5.00 was placed on 2026-03-14.";
+
+const PREVIEW_DEBOUNCE_MS = 200;
+let previewDebounceTimer = null;
+
+/**
+ * Recompute and render the live first-match preview from the current
+ * find/replace/option state, using window.__ffr.computeFirstMatchPreview -
+ * the SAME shared matcher (buildMatcher) the count/replace paths use, never
+ * a third matching implementation. Handles no-match, invalid-regex, empty
+ * find, and backreference-mismatch cases without throwing.
+ */
+function updatePreview() {
+  const state = collectState();
+
+  if (!els.matchPreview) {
+    return;
+  }
+
+  if (
+    !window.__ffr ||
+    typeof window.__ffr.computeFirstMatchPreview !== "function"
+  ) {
+    // content/find-replace.js failed to load for some reason - fail quietly,
+    // the preview is a convenience, not a required control path.
+    els.matchPreview.textContent = "";
+    els.matchPreview.classList.remove("status-error");
+    return;
+  }
+
+  if (state.find === "") {
+    els.matchPreview.textContent = "";
+    els.matchPreview.classList.remove("status-error");
+    return;
+  }
+
+  const result = window.__ffr.computeFirstMatchPreview(
+    PREVIEW_SAMPLE_TEXT,
+    state.find,
+    state.replace,
+    state.options
+  );
+
+  if (!result.ok) {
+    els.matchPreview.textContent = result.error || "Invalid pattern.";
+    els.matchPreview.classList.add("status-error");
+    return;
+  }
+
+  els.matchPreview.classList.remove("status-error");
+
+  if (!result.hasMatch) {
+    els.matchPreview.textContent = "No match in sample text.";
+    return;
+  }
+
+  els.matchPreview.textContent = result.preview;
+}
+
+/**
+ * Debounce preview recomputation so it happens after the user pauses
+ * typing rather than on every keystroke, keeping the popup responsive.
+ */
+function schedulePreviewUpdate() {
+  if (previewDebounceTimer !== null) {
+    clearTimeout(previewDebounceTimer);
+  }
+  previewDebounceTimer = setTimeout(() => {
+    previewDebounceTimer = null;
+    updatePreview();
+  }, PREVIEW_DEBOUNCE_MS);
+}
 
 // ---- Persistence ---------------------------------------------------------
 
@@ -367,6 +459,19 @@ function wireEvents() {
     el.addEventListener("change", persistState);
   }
 
+  // Live preview: recompute (debounced) whenever anything that affects
+  // matching/substitution changes. Field-type and include-iframes changes
+  // don't affect the match/substitution itself, so they're excluded.
+  const previewOnInputs = [els.find, els.replace];
+  for (const el of previewOnInputs) {
+    el.addEventListener("input", schedulePreviewUpdate);
+  }
+
+  const previewOnChange = [els.matchCase, els.wholeWord, els.regex];
+  for (const el of previewOnChange) {
+    el.addEventListener("change", schedulePreviewUpdate);
+  }
+
   // Escape cancels an in-flight run, otherwise closes the popup.
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -387,6 +492,7 @@ async function init() {
   wireEvents();
   updateButtonStates();
   setProgress(0, 0);
+  updatePreview();
 }
 
 init();

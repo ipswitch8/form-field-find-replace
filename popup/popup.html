@@ -184,6 +184,19 @@
 
   </form>
 </main>
+<!--
+  Loaded so the popup's live match preview (popup.js) can call the exact
+  same buildMatcher()/computeFirstMatchPreview() functions the content
+  script uses for count/replace - never a second, duplicated matching
+  implementation. Safe to load here: this file guards its
+  browser.runtime.onMessage registration behind an extension-API check, and
+  even where that guard passes (the popup does have a runtime API) nothing
+  ever calls browser.runtime.sendMessage to trigger it - the popup always
+  talks to the page via browser.tabs.sendMessage instead. It never touches
+  document fields unless a count/replace action message is explicitly
+  handled, which never happens in the popup's own document.
+-->
+<script src="../content/find-replace.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>
