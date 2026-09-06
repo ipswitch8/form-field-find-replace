@@ -1,0 +1,88 @@
+{
+  "$comment": "Project security configuration consumed by security-audit.sh. Paths, patterns and thresholds live here so the scanner stays generic and the policy stays reviewable in one place.",
+
+  "scan_paths": [
+    "manifest.json",
+    "background.js",
+    "popup",
+    "content"
+  ],
+
+  "ignore_globs": [
+    "node_modules/**",
+    "test/**",
+    "test-results/**",
+    "playwright-report/**",
+    "web-ext-artifacts/**",
+    ".git/**",
+    ".claude/**",
+    "*.log"
+  ],
+
+  "secret_scan": {
+    "description": "Assignment-shaped credential patterns only - matching the bare words password/secret/token/key in prose (specs, docs, comments, this config, the audit log) is explicitly NOT a finding. Only a literal value being assigned to one of these names is.",
+    "target_globs": [
+      "**/*.js",
+      "**/*.json",
+      "**/*.html",
+      "**/*.css"
+    ],
+    "patterns": [
+      "(password|passwd|pwd)\\s*[:=]\\s*['\"][^'\"]{3,}['\"]",
+      "(api[_-]?key|apikey)\\s*[:=]\\s*['\"][^'\"]{3,}['\"]",
+      "(secret|client[_-]?secret)\\s*[:=]\\s*['\"][^'\"]{3,}['\"]",
+      "(access[_-]?token|auth[_-]?token|bearer[_-]?token)\\s*[:=]\\s*['\"][^'\"]{3,}['\"]",
+      "AKIA[0-9A-Z]{16}",
+      "-----BEGIN[ A-Z]*PRIVATE KEY-----"
+    ],
+    "exclude_files": [
+      "SPEC.md",
+      "ff_plugin.md",
+      "README.md",
+      "CLAUDE.md",
+      "security-findings.log",
+      ".claude-security.json",
+      "security-audit.sh"
+    ]
+  },
+
+  "dangerous_code_scan": {
+    "description": "eval/innerHTML/Function( usage under shipped extension code. Comments and string literals that merely document the absence of these constructs are not findings - only live, uncommented code invocations are.",
+    "scan_dirs": ["popup", "content"],
+    "patterns": [
+      "\\beval\\s*\\(",
+      "\\.innerHTML\\s*=",
+      "\\bnew\\s+Function\\s*\\(",
+      "\\bFunction\\s*\\("
+    ]
+  },
+
+  "manifest_review": {
+    "required_permissions_allowlist": ["activeTab", "scripting", "storage"],
+    "forbidden_keys": ["host_permissions"],
+    "required": {
+      "manifest_version": 3,
+      "background_mode": "scripts"
+    }
+  },
+
+  "git_permissions": {
+    "note": "On NTFS (Windows) hosts, POSIX permission bits reported by `ls -ld .git` are cosmetic - chmod is a documented no-op on this filesystem. The scanner detects NTFS/Windows and treats this check as informational rather than a pass/fail finding there. On POSIX filesystems, group/other write bits on .git are a real finding."
+  },
+
+  "severity_thresholds": {
+    "critical": [
+      "committed_credential",
+      "world_writable_git_posix",
+      "broad_host_permission",
+      "disallowed_manifest_permission"
+    ],
+    "high": [
+      "live_eval_or_new_function",
+      "live_inner_html_assignment"
+    ],
+    "info": [
+      "git_permission_advisory_ntfs"
+    ]
+  }
+}
