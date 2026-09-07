@@ -26,6 +26,9 @@ module.exports = {
     // archive to Mozilla, so anything not excluded here leaves this machine.
     ".amo-credentials",
     ".amo-credentials.*",
+    // web-ext sign's own upload-correlation cache. Machine-local state; it has
+    // no business in the shipped archive or in git.
+    ".amo-upload-uuid",
     ".claude-security.json",
     "CLAUDE.md",
     "README.md",

@@ -10,3 +10,4 @@ __pycache__/
 .claude/pipelines/*/hook-heartbeat
 .amo-credentials
 .amo-credentials.*
+.amo-upload-uuid
