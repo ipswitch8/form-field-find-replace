@@ -5,17 +5,49 @@ editable form fields of the current page — plain text, whole-word, or full
 regular expressions with backreferences — without ever leaving the browser.
 See `CLAUDE.md` for the full security threat model and permission rationale.
 
+## Getting the extension package
+
+A built `.xpi` is attached to each tagged release:
+
+**https://github.com/ipswitch8/form-field-find-replace/releases/latest**
+
+Build artifacts are gitignored, so the package is **not** in the source tree.
+To build one yourself:
+
+```bash
+npm run build:xpi
+```
+
+That writes `web-ext-artifacts/form_field_find_replace-<version>.zip` and a
+copy at `web-ext-artifacts/ffr.xpi` (the Selenium suite installs that copy). A
+Firefox `.xpi` is just a zip — renaming the `.zip` is all that is required.
+
 ## Loading the extension
+
+### Temporary — any Firefox, removed on restart
 
 1. Open `about:debugging` in Firefox.
 2. Click **This Firefox** in the left sidebar.
 3. Click **Load Temporary Add-on…**.
-4. Select `manifest.json` from the root of this repository.
-5. The toolbar icon appears; click it to open the popup on the current tab.
+4. Select the downloaded `.xpi`, or `manifest.json` from the root of this
+   repository.
+5. The toolbar button appears under the puzzle-piece extensions icon; pin it
+   to the toolbar if you want it one click away. Click it to open the popup on
+   the current tab.
 
-This is a temporary install — it is removed when Firefox restarts. There is
-no packaged `.xpi` to sign for local development; `npx web-ext build` (see
-below) produces one for distribution testing.
+### Permanent — Developer Edition, Nightly or ESR
+
+Release Firefox refuses unsigned extensions permanently and **ignores** the
+`xpinstall.signatures.required` pref, so a permanent install needs either a
+build channel that honours that pref, or a signed package.
+
+1. In `about:config`, set `xpinstall.signatures.required` to `false`.
+2. Open `about:addons`.
+3. Gear icon → **Install Add-on From File…**.
+4. Select the `.xpi`.
+
+For a permanent install on *release* Firefox the package must be signed as an
+unlisted add-on through addons.mozilla.org.
 
 ## Running the tests
 
