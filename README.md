@@ -7,47 +7,72 @@ See `CLAUDE.md` for the full security threat model and permission rationale.
 
 ## Getting the extension package
 
-A built `.xpi` is attached to each tagged release:
+A **Mozilla-signed** `.xpi` is attached to each tagged release:
 
 **https://github.com/ipswitch8/form-field-find-replace/releases/latest**
 
-Build artifacts are gitignored, so the package is **not** in the source tree.
-To build one yourself:
+It is signed by addons.mozilla.org on the *unlisted* channel (self-distributed,
+not published in the public add-on directory), so it installs permanently in
+ordinary release Firefox with signature enforcement left on.
 
-```bash
-npm run build:xpi
-```
+Build artifacts are gitignored, so no package lives in the source tree.
 
-That writes `web-ext-artifacts/form_field_find_replace-<version>.zip` and a
-copy at `web-ext-artifacts/ffr.xpi` (the Selenium suite installs that copy). A
-Firefox `.xpi` is just a zip — renaming the `.zip` is all that is required.
+## Installing
 
-## Loading the extension
+### Permanent — any Firefox, including release (recommended)
 
-### Temporary — any Firefox, removed on restart
-
-1. Open `about:debugging` in Firefox.
-2. Click **This Firefox** in the left sidebar.
-3. Click **Load Temporary Add-on…**.
-4. Select the downloaded `.xpi`, or `manifest.json` from the root of this
-   repository.
-5. The toolbar button appears under the puzzle-piece extensions icon; pin it
-   to the toolbar if you want it one click away. Click it to open the popup on
-   the current tab.
-
-### Permanent — Developer Edition, Nightly or ESR
-
-Release Firefox refuses unsigned extensions permanently and **ignores** the
-`xpinstall.signatures.required` pref, so a permanent install needs either a
-build channel that honours that pref, or a signed package.
-
-1. In `about:config`, set `xpinstall.signatures.required` to `false`.
+1. Download the signed `.xpi` from the release above.
 2. Open `about:addons`.
 3. Gear icon → **Install Add-on From File…**.
-4. Select the `.xpi`.
+4. Select the `.xpi` and confirm.
 
-For a permanent install on *release* Firefox the package must be signed as an
-unlisted add-on through addons.mozilla.org.
+No `about:config` changes are needed. The add-on persists across restarts.
+
+### Temporary — for development, removed on restart
+
+1. Open `about:debugging`.
+2. Click **This Firefox** in the left sidebar.
+3. Click **Load Temporary Add-on…**.
+4. Select an `.xpi`, or `manifest.json` from the root of this repository.
+
+Either way, the toolbar button appears under the puzzle-piece extensions icon;
+pin it to the toolbar if you want it one click away. Click it to open the popup
+on the current tab.
+
+## Building and signing it yourself
+
+```bash
+npm run build:xpi     # unsigned package -> web-ext-artifacts/
+bash sign.sh          # submit to AMO, download the signed .xpi
+```
+
+`build:xpi` writes `web-ext-artifacts/form_field_find_replace-<version>.zip`
+plus a copy at `web-ext-artifacts/ffr.xpi` (the Selenium suite installs that
+copy). A Firefox `.xpi` is just a zip, so renaming the `.zip` is sufficient for
+a temporary load.
+
+`sign.sh` needs AMO API credentials from
+https://addons.mozilla.org/en-US/developers/addon/api/key/ , placed in a
+`.amo-credentials` file in the repository root:
+
+```
+WEB_EXT_API_KEY=user:12345678:123
+WEB_EXT_API_SECRET=<the long secret>
+```
+
+That filename is gitignored **and** excluded from the packaged archive — worth
+being deliberate about, since `web-ext sign` uploads the built archive to
+Mozilla, so anything not excluded leaves the machine.
+
+To confirm a signed build really is valid, `python
+test/selenium/verify_signed.py` performs a **permanent** install into a real
+Firefox with `xpinstall.signatures.required` left **on**. A temporary install
+accepts anything and proves nothing; only the permanent path exercises
+signature enforcement.
+
+Note that the add-on id (`mhasse@itwerx.net`) binds permanently to the AMO
+account on first submission and cannot be reused, so change it before your
+first signing run, not after.
 
 ## Running the tests
 

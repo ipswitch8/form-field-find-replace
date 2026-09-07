@@ -8,7 +8,9 @@
     "lint:ext": "npx --yes web-ext lint",
     "build:xpi": "npx --yes web-ext build --overwrite-dest && node -e \"require('fs').copyFileSync('web-ext-artifacts/form_field_find_replace-0.1.0.zip','web-ext-artifacts/ffr.xpi')\"",
     "test:selenium": "npm run build:xpi && python test/selenium/test_extension_e2e.py",
-    "test:selenium:smoke": "python test/selenium/smoke.py"
+    "test:selenium:smoke": "python test/selenium/smoke.py",
+    "sign": "bash sign.sh",
+    "verify:signed": "python test/selenium/verify_signed.py"
   },
   "devDependencies": {
     "@playwright/test": "^1.47.0"
