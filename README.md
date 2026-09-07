@@ -248,16 +248,21 @@ CommonJS config, or the `--ignore-files` CLI flag, actually changes what
 `lint`/`build` see. This was verified empirically against the installed
 version before relying on it.)
 
-With that in place, `npx web-ext lint` reports exactly one warning:
-`MISSING_DATA_COLLECTION_PERMISSIONS`. This is left as-is intentionally —
-Firefox's `data_collection_permissions` manifest key is unsupported below a
-strict_min_version that post-dates this extension's spec-mandated `115.0`.
-Adding the key at `strict_min_version: "115.0"` does not clear the warning;
-it *replaces one warning with two* (`KEY_FIREFOX_UNSUPPORTED_BY_MIN_VERSION`),
-which is strictly worse. The single `MISSING_DATA_COLLECTION_PERMISSIONS`
-warning is accepted as-is; nothing in this extension collects data in the
-first place (see `CLAUDE.md`'s "nothing leaves the browser" rule), so the key
-would be declaring an empty policy for a capability that doesn't exist.
+With that in place, `npx web-ext lint` reports **0 errors and 2 warnings**, both
+`KEY_FIREFOX_UNSUPPORTED_BY_MIN_VERSION` (desktop and Android), for
+`data_collection_permissions`.
+
+That key is declared as `{"required": ["none"]}` — accurate, since nothing here
+collects data (see `CLAUDE.md`'s "nothing leaves the browser" rule). It is
+unsupported at the spec-mandated `strict_min_version: "115.0"`, so declaring it
+trades the single `MISSING_DATA_COLLECTION_PERMISSIONS` warning for those two.
+
+An earlier revision omitted the key for exactly that reason, and that was the
+right call while the only target was temporary local loading. It is the wrong
+call for a distributable build: the key is **required for new
+addons.mozilla.org submissions**, so signing fails validation without it. The
+key is forward-compatible — Firefox 115 ignores manifest keys it does not
+recognise — and errors remain at zero, so the trade is worth making.
 
 ## Security tooling
 

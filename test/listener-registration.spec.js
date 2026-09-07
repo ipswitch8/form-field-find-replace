@@ -120,7 +120,7 @@ test.describe("message listener registration guard (phase 4)", () => {
       window.__registrations = 0;
       window.browser = {
         runtime: {
-          id: "find-replace@example.local",
+          id: "mhasse@itwerx.net",
           onMessage: {
             addListener: function () {
               window.__registrations += 1;

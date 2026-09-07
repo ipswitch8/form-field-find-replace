@@ -21,6 +21,11 @@ module.exports = {
     "ff_plugin.md",
     "security-findings.log",
     "security-audit.sh",
+    "sign.sh",
+    // NEVER package the AMO credentials. web-ext sign uploads the built
+    // archive to Mozilla, so anything not excluded here leaves this machine.
+    ".amo-credentials",
+    ".amo-credentials.*",
     ".claude-security.json",
     "CLAUDE.md",
     "README.md",

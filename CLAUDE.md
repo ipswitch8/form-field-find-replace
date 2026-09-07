@@ -1,7 +1,7 @@
 # CLAUDE.md — Security Documentation
 
 Security documentation for the **Form Field Find & Replace** Firefox extension
-(`find-replace@example.local`). This file is the authoritative record of the
+(`mhasse@itwerx.net`). This file is the authoritative record of the
 threat model, permission rationale, and the hard rules the codebase must never
 violate. `security-audit.sh` mechanically enforces a subset of this; the rest
 is enforced by code review against this document.
@@ -51,6 +51,8 @@ their own data. Those are out of scope for a client-side content script.
 | `activeTab` | Grants temporary access to the tab the user is currently interacting with, only after an explicit user gesture (clicking the toolbar action). | This is what makes `host_permissions` unnecessary. `activeTab` never persists across navigations or tabs, so there is no ambient access sitting in the background. |
 | `scripting` | Lets the **popup** call `browser.scripting.executeScript` to inject `content/find-replace.js` into the active tab, on demand, at the moment the user invokes the extension. | Injection is per-invocation, not declarative. The manifest has no `content_scripts` entry and no `matches` pattern — the extension is not present on any page until the user asks for it. |
 
+| `storage` | Persists the last-used find/replace strings, checkbox states, and field-type selections in `storage.local` between popup opens. | `storage.local` is local to the browser profile. Nothing is synced, nothing is remote. |
+
 ### Why injection is popup-driven, not background-driven
 
 `manifest.json` sets `action.default_popup`, and per the WebExtension spec
@@ -68,7 +70,6 @@ replace, closed the popup and reopened it would silently lose Undo.
 
 `background.js` remains as the MV3 event page required by the spec, but it does
 not perform injection.
-| `storage` | Persists the last-used find/replace strings, checkbox states, and field-type selections in `storage.local` between popup opens. | `storage.local` is local to the browser profile. Nothing is synced, nothing is remote. |
 
 **No `host_permissions` entry exists, on purpose.** A host permission would
 grant the extension standing access to page content on every navigation,
@@ -79,10 +80,18 @@ strictly smaller ambient footprint. `security-audit.sh` fails the build if
 `host_permissions` is ever added or if `permissions` gains a wildcard
 (`<all_urls>` or any pattern containing `*`).
 
-`MISSING_DATA_COLLECTION_PERMISSIONS` (`browser_ext_web-ext lint`) is the one
-warning intentionally left unresolved — see README.md "Known limitations" for
-why adding `data_collection_permissions` at `strict_min_version: "115.0"`
-makes things worse, not better.
+`browser_specific_settings.gecko.data_collection_permissions` is declared as
+`{"required": ["none"]}` — an accurate statement, since this extension collects
+nothing and makes no network calls. That key is required for new
+addons.mozilla.org submissions, so signing fails validation without it.
+
+It is not supported at the spec-mandated `strict_min_version: "115.0"`, so
+declaring it trades the `MISSING_DATA_COLLECTION_PERMISSIONS` warning for two
+`KEY_FIREFOX_UNSUPPORTED_BY_MIN_VERSION` warnings. That is the correct trade:
+the key is forward-compatible (Firefox 115 ignores manifest keys it does not
+recognise), errors stay at zero, and the alternative is a package that cannot
+be signed. An earlier revision omitted the key for exactly the opposite reason,
+when the only target was temporary local loading.
 
 ---
 

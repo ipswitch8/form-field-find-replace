@@ -18,7 +18,7 @@ from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-ADDON_ID = "find-replace@example.local"
+ADDON_ID = "mhasse@itwerx.net"
 ADDON_UUID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
 opts = Options()

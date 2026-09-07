@@ -55,7 +55,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FIXTURE = "file:///" + os.path.join(PROJECT_ROOT, "test", "fixture.html").replace("\\", "/")
 
-ADDON_ID = "find-replace@example.local"
+ADDON_ID = "mhasse@itwerx.net"
 
 # Pinning the internal UUID makes the popup addressable at a known
 # moz-extension:// URL. Without this the UUID is randomised per profile and the
@@ -406,7 +406,7 @@ class ExtensionE2ETest(unittest.TestCase):
                   out.ids.push(n.getAttribute('data-extensionid'));
                 }
                 for (const n of nodes) {
-                  if ((n.getAttribute('data-extensionid') || '').includes('find-replace')) {
+                  if ((n.getAttribute('data-extensionid') || '') === '__ADDON_ID__') {
                     try {
                       const a = n.querySelector('.unified-extensions-item-action-button')
                              || n.querySelector('toolbarbutton') || n;
@@ -417,7 +417,7 @@ class ExtensionE2ETest(unittest.TestCase):
                   }
                 }
                 return out;
-                """
+                """.replace("__ADDON_ID__", ADDON_ID)
             )
             self.assertIn(ADDON_ID, result["ids"],
                           "extension has no toolbar action registered")
@@ -459,7 +459,7 @@ class ExtensionE2ETest(unittest.TestCase):
                 """
                 const nodes = document.querySelectorAll('[data-extensionid]');
                 for (const n of nodes) {
-                  if ((n.getAttribute('data-extensionid') || '').includes('find-replace')) {
+                  if ((n.getAttribute('data-extensionid') || '') === '__ADDON_ID__') {
                     const a = n.querySelector('.unified-extensions-item-action-button')
                            || n.querySelector('toolbarbutton') || n;
                     a.click();
@@ -467,7 +467,7 @@ class ExtensionE2ETest(unittest.TestCase):
                   }
                 }
                 return false;
-                """
+                """.replace("__ADDON_ID__", ADDON_ID)
             )
             self.assertTrue(clicked, "could not click the extension's toolbar action")
             time.sleep(4)  # popup opens, init() runs, injection is attempted
@@ -493,12 +493,12 @@ class ExtensionE2ETest(unittest.TestCase):
                   if (!s) continue;
                   if (s.includes('Unable to load script') ||
                       s.includes('Missing host permission') ||
-                      (s.includes('find-replace') && s.includes('Error'))) {
+                      (s.includes('__ADDON_ID__') && s.includes('Error'))) {
                     out.push(s.slice(0, 300));
                   }
                 }
                 return out;
-                """
+                """.replace("__ADDON_ID__", ADDON_ID)
             )
         finally:
             self.driver.set_context("content")
