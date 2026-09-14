@@ -28,6 +28,23 @@ Build artifacts are gitignored, so no package lives in the source tree.
 
 No `about:config` changes are needed. The add-on persists across restarts.
 
+> **"This add-on could not be installed because it has not been verified"**
+>
+> That message almost always means an *unsigned* build was selected, not that
+> signing failed. `npm run build:xpi` leaves unsigned dev builds in
+> `web-ext-artifacts/` next to the signed release, and the names differ only by
+> a `-signed` suffix — easy to pick the wrong one.
+>
+> To see which is which, without launching Firefox:
+>
+> ```bash
+> npm run check:xpi
+> ```
+>
+> It prints SIGNED/UNSIGNED, the add-on id, the SHA256, and verifies that every
+> file digest still matches the signature, for each `.xpi` it finds. Only a file
+> it reports as `SIGNED` will install permanently.
+
 ### Temporary — for development, removed on restart
 
 1. Open `about:debugging`.

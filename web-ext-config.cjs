@@ -22,6 +22,7 @@ module.exports = {
     "security-findings.log",
     "security-audit.sh",
     "sign.sh",
+    "check-xpi.py",
     // NEVER package the AMO credentials. web-ext sign uploads the built
     // archive to Mozilla, so anything not excluded here leaves this machine.
     ".amo-credentials",

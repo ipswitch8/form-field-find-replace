@@ -10,7 +10,8 @@
     "test:selenium": "npm run build:xpi && python test/selenium/test_extension_e2e.py",
     "test:selenium:smoke": "python test/selenium/smoke.py",
     "sign": "bash sign.sh",
-    "verify:signed": "python test/selenium/verify_signed.py"
+    "verify:signed": "python test/selenium/verify_signed.py",
+    "check:xpi": "python check-xpi.py"
   },
   "devDependencies": {
     "@playwright/test": "^1.47.0"
