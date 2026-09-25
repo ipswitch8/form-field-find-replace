@@ -11,3 +11,4 @@ __pycache__/
 .amo-credentials
 .amo-credentials.*
 .amo-upload-uuid
+.claude/pipelines/*/gate-inflight

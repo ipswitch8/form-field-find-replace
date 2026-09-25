@@ -1,0 +1,25 @@
+{
+  "pipeline": ".claude/pipelines/undo-bug/pipeline.json",
+  "pipeline_id": "undo-bug",
+  "pipeline_generated_at": "2026-09-25T00:00:00Z",
+  "pipeline_content_sig": "9a4cb32ad44caea4e3a8e17fa8b7e87acce7722ac4297f9c7c32ee30eb904d6a",
+  "current_phase_index": 0,
+  "phases_complete": [],
+  "current_gate_results": {
+    "karen": true,
+    "validator": true,
+    "test-runner": true,
+    "claim-check": true
+  },
+  "awaiting_commit": false,
+  "gate_phase_id": "phase-1",
+  "gate_results_by_phase": {
+    "phase-1": {
+      "karen": true,
+      "validator": true,
+      "test-runner": true,
+      "claim-check": true
+    }
+  },
+  "commit_marker_head": "08fd467b44b0813f4a50eea3bed1d00ae83d915f"
+}

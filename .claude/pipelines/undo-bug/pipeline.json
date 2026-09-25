@@ -1,0 +1,64 @@
+{
+  "task": "Fix the undo/replace-sequence bug in the Form Field Find & Replace Firefox extension: (A) popup/popup.js handleUndo() ignores response.restored and reports 'Undo complete.' even when restored===0 (empty snapshot after re-injection), and (B) popup/popup.js's module-level `hasUndoableChange` resets to false on every popup reopen even though the content script still holds a valid snapshot, disabling Undo when it is actually available. Fix by making the content script the single source of truth for undo availability (new getUndoState-style query, exposed via ping/count response), have the popup query it on init and after every action instead of inferring state locally, correct handleUndo to treat restored===0 as a failure, and fix the false comment at popup.js ~379. Add popup-level Playwright tests (mounting popup.html with a mocked browser API via addInitScript, per the existing test/undo.spec.js and test/activation.spec.js pattern) that fail against the current buggy code and pass after the fix. All existing 65 Playwright + 7 Selenium tests must keep passing.",
+  "pipeline_id": "undo-bug",
+  "generated_at": "2026-09-25T00:00:00Z",
+  "total_phases": 3,
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Write failing popup-level regression tests",
+      "description": "Add new Playwright popup-level tests (mounting popup.html with a mocked browser API, driving the real Undo/Replace buttons, per the test/undo.spec.js and test/activation.spec.js pattern) that reproduce Defect A (undo reported as complete when the content-script snapshot is empty / restored===0) and Defect B (Undo button disabled on popup reopen despite a valid content-script snapshot existing), and demonstrate that both tests FAIL against the current, unmodified popup/popup.js.",
+      "acceptance_criteria": [
+        "A new test file (e.g. test/popup-undo-desync.spec.js) exists under C:\\Users\\mhasse\\source\\FF_replace\\test\\, following the addInitScript-mocked-browser mounting pattern already used in test/undo.spec.js and test/activation.spec.js (not a content-script-direct probe like test/repro-sequence.spec.js)",
+        "The new file contains at least one test that mocks tabs.sendMessage so a simulated 'undo' action returns {ok:true, restored:0, error:null} (empty snapshot) and asserts the popup's status line/UI does NOT claim success (e.g. does not read 'Undo complete.') when restored is 0",
+        "The new file contains at least one test that simulates: replace succeeds (response.replaced > 0), then the popup document is torn down and remounted (simulating popup close/reopen) with a mocked content-script response indicating a valid undo snapshot still exists, and asserts the Undo button is enabled after remount, driven through the real DOM control (not by reading internal JS state)",
+        "Running `npx playwright test test/popup-undo-desync.spec.js` against the current unmodified popup/popup.js produces at least 2 failing tests (documented in the phase output/log), proving the new tests actually catch both defects before any fix is applied",
+        "No existing file under C:\\Users\\mhasse\\source\\FF_replace\\popup\\ or C:\\Users\\mhasse\\source\\FF_replace\\content\\ is modified in this phase"
+      ],
+      "gate_agents": [
+        "karen",
+        "validator",
+        "test-runner",
+        "claim-check"
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Fix undo state desync: content script as source of truth, popup message protocol extension, popup logic fix",
+      "description": "Extend the popup<->content-script message protocol with a getUndoState-style response field reporting real snapshot availability/size, make the popup query it on init and after replace/undo instead of relying on the module-level hasUndoableChange boolean, fix handleUndo() to treat restored===0 as a non-success, and correct the false comment at popup.js ~379; validate the message shape changes against the security threat model (no eval/Function, sender validation preserved).",
+      "acceptance_criteria": [
+        "content/find-replace.js exposes undo-availability information (e.g. lastUndoSnapshot.length, or a dedicated 'getUndoState' action) reachable via message handling, verifiable by grep for the new field/action name in content/find-replace.js",
+        "popup/popup.js no longer relies solely on the module-level `hasUndoableChange` variable to gate the Undo button's enabled state on init or after a popup reopen; it queries the content script's real undo-availability response and uses it to set button state, verifiable by reading the updated init()/updateButtonStates() call chain in popup/popup.js",
+        "handleUndo() in popup/popup.js reads response.restored and, when restored === 0, sets a non-success status message (does not display 'Undo complete.') and does not claim the operation succeeded",
+        "The false claim at popup.js ~379 ('the popup's own hasUndoableChange state persists independently') is removed or corrected to accurately describe the new content-script-source-of-truth behavior",
+        "The message-shape validation in content/find-replace.js's onMessage listener (sender/action allowlist per CLAUDE.md/SPEC.md) still rejects malformed or unexpected messages; no `eval`, `innerHTML =`, or `Function(` introduced anywhere in popup/ or content/, verifiable by `bash security-audit.sh` exiting 0",
+        "All Playwright tests written in phase-1 (test/popup-undo-desync.spec.js) now pass against the modified code"
+      ],
+      "gate_agents": [
+        "karen",
+        "validator",
+        "security-audit",
+        "test-runner",
+        "claim-check"
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Full regression sweep and documentation",
+      "description": "Run the complete existing Playwright and Selenium suites plus the new popup-level tests together to confirm no regression, and update README.md/CLAUDE.md if the message protocol or undo behavior documentation is now stale.",
+      "acceptance_criteria": [
+        "`npm test` (full Playwright suite, now including test/popup-undo-desync.spec.js) reports 0 failures and a total test count of at least 67 (the prior 65 plus at least 2 new tests), with results written to test-results/gtest-results.xml",
+        "`npm run test:selenium` reports all 7 existing Selenium tests passing with no new failures",
+        "test/repro-sequence.spec.js (the existing content-script-only repro probe) still passes, confirming the content-script algorithm itself remains correct and untouched",
+        "Any documentation in README.md or CLAUDE.md describing the popup<->content-script message shape (the 'Message passing' section) or the undo persistence comment is updated to match the new getUndoState/undo-availability behavior, or confirmed already accurate if no wording depended on the old (false) assumption",
+        "`bash security-audit.sh` exits 0 on the final working tree"
+      ],
+      "gate_agents": [
+        "karen",
+        "validator",
+        "test-runner",
+        "claim-check"
+      ]
+    }
+  ]
+}
