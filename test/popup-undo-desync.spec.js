@@ -185,6 +185,83 @@ test.describe("popup undo desync (data-loss regression)", () => {
     await expect(page.locator("#undo-btn")).toBeEnabled();
   });
 
+  // ---- count-response resync ---------------------------------------------
+  //
+  // The content script reports undoAvailable/undoCount on its `count`
+  // response as well as its `ping`. These two tests are what make that
+  // load-bearing: without them the count-response fields would be a knob
+  // wired to nothing, and a future reader would reasonably assume they were
+  // doing something. A gate caught exactly that and rejected the phase.
+  //
+  // The behaviour they pin is real: the popup can sit open while the tab
+  // navigates away, which destroys the content script and its snapshot. Undo
+  // would keep rendering enabled until the user clicked it and got "Nothing
+  // was restored" - a button promising something already gone.
+
+  test("Count resyncs the Undo button OFF when the snapshot has since been lost", async ({
+    page,
+  }) => {
+    // Replace succeeds, so Undo becomes enabled...
+    await mountPopup(page, { replaced: 3, undoAvailable: false });
+    await page.locator("#replace-all-btn").click();
+    await expect(page.locator("#undo-btn")).toBeEnabled();
+
+    // ...then the page navigates, wiping the content script's snapshot. The
+    // next count round trip is the first chance the popup has to find out.
+    await page.evaluate(() => {
+      // @ts-ignore - retarget the mock to report the snapshot as gone.
+      window.browser.tabs.sendMessage = (_tabId, message) => {
+        if (message.action === "count") {
+          return Promise.resolve({
+            ok: true,
+            matches: 3,
+            fields: 3,
+            totalFields: 5,
+            undoAvailable: false,
+            undoCount: 0,
+          });
+        }
+        return Promise.resolve({ ok: true });
+      };
+    });
+
+    await page.locator("#count-btn").click();
+
+    // If the count response's undoAvailable were ignored, this stays enabled.
+    await expect(page.locator("#undo-btn")).toBeDisabled();
+  });
+
+  test("Count resyncs the Undo button ON when a snapshot exists the popup did not know about", async ({
+    page,
+  }) => {
+    // Fresh popup, nothing replaced in this session - Undo starts disabled.
+    await mountPopup(page, { replaced: 0, undoAvailable: false });
+    await expect(page.locator("#undo-btn")).toBeDisabled();
+
+    // The content script in the tab does in fact hold a snapshot (e.g. from
+    // an earlier popup session). Count is where the popup learns that.
+    await page.evaluate(() => {
+      // @ts-ignore
+      window.browser.tabs.sendMessage = (_tabId, message) => {
+        if (message.action === "count") {
+          return Promise.resolve({
+            ok: true,
+            matches: 2,
+            fields: 2,
+            totalFields: 5,
+            undoAvailable: true,
+            undoCount: 2,
+          });
+        }
+        return Promise.resolve({ ok: true });
+      };
+    });
+
+    await page.locator("#count-btn").click();
+
+    await expect(page.locator("#undo-btn")).toBeEnabled();
+  });
+
   test("Undo stays disabled after reopen when the content script really has no snapshot", async ({
     page,
   }) => {

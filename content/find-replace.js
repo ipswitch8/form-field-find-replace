@@ -1381,12 +1381,28 @@
     const totalFields = filtered.length;
 
     if (message.find === "") {
-      return { ok: true, matches: 0, fields: 0, totalFields, error: null };
+      return {
+        ok: true,
+        matches: 0,
+        fields: 0,
+        totalFields,
+        error: null,
+        undoAvailable: lastUndoSnapshot.length > 0,
+        undoCount: lastUndoSnapshot.length,
+      };
     }
 
     const { regex, error } = buildMatcher(message.find, message.options);
     if (error) {
-      return { ok: false, matches: 0, fields: 0, totalFields, error };
+      return {
+        ok: false,
+        matches: 0,
+        fields: 0,
+        totalFields,
+        error,
+        undoAvailable: lastUndoSnapshot.length > 0,
+        undoCount: lastUndoSnapshot.length,
+      };
     }
 
     let totalMatches = 0;
@@ -1400,7 +1416,15 @@
       }
     }
 
-    return { ok: true, matches: totalMatches, fields: fieldsWithMatches, totalFields, error: null };
+    return {
+      ok: true,
+      matches: totalMatches,
+      fields: fieldsWithMatches,
+      totalFields,
+      error: null,
+      undoAvailable: lastUndoSnapshot.length > 0,
+      undoCount: lastUndoSnapshot.length,
+    };
   }
 
   // Guard the real listener registration behind an extension-API check so
@@ -1474,7 +1498,14 @@
         // Cheap presence check for the popup's ensureContentScriptInjected -
         // answering at all proves this content script is already loaded and
         // its module-level state (undo snapshot, cancelled flag) is intact.
-        return Promise.resolve({ ok: true });
+        // Also reports real undo availability so the popup - whose own
+        // module-level state is destroyed every time it closes - never has
+        // to guess whether a snapshot survives in this tab.
+        return Promise.resolve({
+          ok: true,
+          undoAvailable: lastUndoSnapshot.length > 0,
+          undoCount: lastUndoSnapshot.length,
+        });
       }
 
       return undefined;

@@ -376,29 +376,41 @@ function buildMessage(action) {
  * (lastUndoSnapshot) and the in-flight-run cancellation flag (cancelled). If
  * this function injected unconditionally every time the popup opened, a user
  * who ran a replace, closed the popup, and reopened it would silently lose
- * their undo snapshot: the Undo button would still render enabled (the
- * popup's own hasUndoableChange state persists independently), but the
- * content script backing it would have nothing left to restore. Pinging
- * first and injecting only when the ping fails (no receiver in the tab)
- * preserves that state across popup open/close cycles - injection happens
- * exactly once per page load, not once per popup open.
+ * their undo snapshot. Pinging first and injecting only when the ping fails
+ * (no receiver in the tab) preserves that state across popup open/close
+ * cycles - injection happens exactly once per page load, not once per popup
+ * open.
+ *
+ * The popup's own module-level state (hasUndoableChange) does NOT persist
+ * across a popup close/reopen - the popup document is destroyed and rebuilt
+ * every time, resetting every `let`/`const` in this file. The content
+ * script's snapshot is the only thing that actually survives, which is why
+ * the ping response below is returned to the caller: the content script is
+ * the single source of truth for undo availability, and init() uses this
+ * return value (never a locally-remembered boolean) to decide whether the
+ * Undo button should be enabled on mount.
  *
  * This needs no host_permissions: activeTab is granted by the user's click
  * on the toolbar action that opened this popup, and `scripting` is already
  * declared in manifest.json.
  * @param {number} tabId
- * @returns {Promise<void>}
+ * @returns {Promise<{ok: boolean, undoAvailable?: boolean, undoCount?: number}|null>}
+ *   The content script's ping response when one was reachable (either
+ *   already present, or freshly injected - in which case undo state is
+ *   synthesized as empty, since a fresh injection always starts with no
+ *   snapshot); null if the page could not be reached/scripted at all.
  */
 async function ensureContentScriptInjected(tabId) {
   if (typeof tabId !== "number") {
-    return;
+    return null;
   }
 
   try {
-    await browser.tabs.sendMessage(tabId, { action: "ping" });
+    const response = await browser.tabs.sendMessage(tabId, { action: "ping" });
     // Resolved - the content script is already present and its state
-    // (undo snapshot, cancelled flag) is intact. Do nothing.
-    return;
+    // (undo snapshot, cancelled flag) is intact. Hand the real response
+    // back so the caller can trust it over any locally-held assumption.
+    return response || null;
   } catch (error) {
     // No receiver in the tab - the content script isn't loaded (fresh
     // navigation, or the very first time the popup has opened against this
@@ -410,6 +422,9 @@ async function ensureContentScriptInjected(tabId) {
       target: { tabId },
       files: [CONTENT_SCRIPT_PATH],
     });
+    // A freshly injected content script always starts with an empty undo
+    // snapshot - its module-level state was just created from scratch.
+    return { ok: true, undoAvailable: false, undoCount: 0 };
   } catch (error) {
     // Genuinely unscriptable page (about:, the add-ons manager,
     // view-source:, etc.) - fail quietly. sendToContentScript's own
@@ -419,6 +434,7 @@ async function ensureContentScriptInjected(tabId) {
       "Form Field Find & Replace: content script injection failed",
       error
     );
+    return null;
   }
 }
 
@@ -492,6 +508,20 @@ async function handleCount() {
     setStatus(response.error, { error: true });
     return;
   }
+
+  // Resync the Undo button from the content script while we have a fresh
+  // round trip in hand. This closes a real staleness window: the popup can
+  // sit open while the tab navigates, which destroys the content script and
+  // its undo snapshot. Without this, Undo keeps rendering enabled until the
+  // user clicks it and gets "Nothing was restored" - the button promising
+  // something that is already gone. `count` is the natural place to do it
+  // because it is the one read-only action a user may run repeatedly, and it
+  // costs no extra message.
+  if (typeof response.undoAvailable === "boolean") {
+    hasUndoableChange = response.undoAvailable;
+    updateButtonStates();
+  }
+
   setStatus(`${response.matches ?? 0} matches in ${response.fields ?? 0} fields`);
 }
 
@@ -573,9 +603,29 @@ async function handleUndo() {
     setStatus(response.error, { error: true });
     return;
   }
+
+  // The content script is the single source of truth here: `restored` is
+  // the count it ACTUALLY wrote back, not a request echo. restored === 0
+  // means its snapshot was already empty - most likely because the tab
+  // navigated (or the popup's earlier ping failed and re-injection reset
+  // the content script's module state) since the last replace. Either way
+  // nothing was recovered, and the user must be told that plainly rather
+  // than being reassured with "Undo complete."
+  const restored = response.restored ?? 0;
+
   hasUndoableChange = false;
   updateButtonStates();
-  setStatus("Undo complete.");
+
+  if (restored === 0) {
+    setStatus(
+      "Nothing was restored - the page may have reloaded since the last " +
+        "replace, so the previous values could not be recovered.",
+      { error: true }
+    );
+    return;
+  }
+
+  setStatus(`Undo complete. Restored ${restored} field${restored === 1 ? "" : "s"}.`);
 }
 
 async function handleCancel() {
@@ -685,7 +735,15 @@ async function init() {
   try {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     if (tab && typeof tab.id === "number") {
-      await ensureContentScriptInjected(tab.id);
+      const pingResponse = await ensureContentScriptInjected(tab.id);
+      // The content script is the single source of truth for undo
+      // availability - this popup document was just created from scratch,
+      // so hasUndoableChange's initial `false` is only a placeholder until
+      // this real answer comes back. A prior popup session may have left a
+      // valid snapshot behind in this tab; do not leave Undo disabled just
+      // because this fresh module instance has never heard about it.
+      hasUndoableChange = Boolean(pingResponse && pingResponse.undoAvailable);
+      updateButtonStates();
     }
   } catch (error) {
     // No active tab, or a page that can't be scripted - the first real
