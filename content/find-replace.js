@@ -1394,14 +1394,18 @@
 
     const { regex, error } = buildMatcher(message.find, message.options);
     if (error) {
+      // Deliberately NO undoAvailable/undoCount here. The popup returns early
+      // on response.error, so it can never read them off this branch -
+      // attaching them for symmetry alone would be a field shaped like a
+      // capability that is wired to nothing, which is what a gate rejected
+      // when these fields first landed. The success branch and the ping
+      // response, which ARE consumed, carry them.
       return {
         ok: false,
         matches: 0,
         fields: 0,
         totalFields,
         error,
-        undoAvailable: lastUndoSnapshot.length > 0,
-        undoCount: lastUndoSnapshot.length,
       };
     }
 

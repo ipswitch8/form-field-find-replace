@@ -71,6 +71,32 @@ replace, closed the popup and reopened it would silently lose Undo.
 `background.js` remains as the MV3 event page required by the spec, but it does
 not perform injection.
 
+### The content script owns undo state, not the popup
+
+The popup document is destroyed every time the popup closes, so **every
+module-level variable in `popup.js` is reinitialised on each open**. It
+therefore cannot be trusted to remember whether an undo snapshot exists. Only
+the content script, which lives as long as the page, actually knows.
+
+So the `ping` and `count` responses carry `undoAvailable` and `undoCount`,
+derived from the snapshot's real length, and the popup sets its Undo button
+from those rather than from its own boolean. `count` doubles as a resync point:
+the popup can sit open while the tab navigates away, destroying the snapshot,
+and without that resync Undo would keep rendering enabled until the user
+clicked it and got "Nothing was restored".
+
+`handleUndo` in the popup reads `response.restored` and treats `0` as a
+failure. The content script answers `{ok: true, restored: 0}` on an empty
+snapshot — `ok` means "the message was handled", not "your text came back" —
+and conflating the two is what made an earlier version report "Undo complete."
+while the user's original text was gone for good.
+
+An earlier revision of this file claimed the popup's own state "persists
+independently" across open/close. It does not, and that false sentence is
+precisely how the bug stayed hidden. Comments asserting a data flow that a grep
+would disprove have now cost this project three defects; prefer a statement a
+test pins down.
+
 **No `host_permissions` entry exists, on purpose.** A host permission would
 grant the extension standing access to page content on every navigation,
 whether or not the user ever opens the popup. `activeTab` + on-demand

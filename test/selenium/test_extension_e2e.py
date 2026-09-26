@@ -114,6 +114,29 @@ def build_driver():
     return driver
 
 
+def _wait_until(driver, script, timeout=15.0, interval=0.25):
+    """Poll a chrome-context script until it returns truthy, or time out.
+
+    Replaces fixed time.sleep() calls. Fixed sleeps are the classic source of
+    intermittent failures: they pass when the machine is quick and fail when it
+    is not, which produces exactly the "failed once, passed on retry" pattern
+    that hides real defects. Two such intermittent failures were observed in
+    this suite before this helper existed.
+
+    Returns the script's value, or None if it never became truthy.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            value = driver.execute_script(script)
+        except WebDriverException:
+            value = None
+        if value:
+            return value
+        time.sleep(interval)
+    return None
+
+
 def _assert_addon_live(driver):
     """Fail loudly if the add-on is not actually installed.
 
@@ -252,23 +275,68 @@ class ExtensionE2ETest(unittest.TestCase):
         find_box = self.driver.find_element(By.ID, "find-input")
         replace_box = self.driver.find_element(By.ID, "replace-input")
         find_box.clear()
-        find_box.send_keys("persist-me")
-        replace_box.clear()
-        replace_box.send_keys("restored")
-        self.driver.find_element(By.ID, "match-case-checkbox").click()
-
-        # Give the change handler time to write through to storage.local.
-        deadline = time.time() + 10
+        # RACE: popup.js's init() does `await restoreState()` before wiring
+        # events, and Selenium can start typing as soon as #find-input exists -
+        # which is before that await resolves. When it does resolve it writes
+        # the stored state back into the form, wiping whatever was typed first.
+        # That is exactly what the intermittent failure looked like: `replace`
+        # and the checkbox (typed/clicked later) persisted fine while `find`
+        # (typed first) came back as "".
+        #
+        # Type, then confirm the field actually kept the value, retrying until
+        # it sticks. This is robust whatever the precise timing, and it does
+        # not require the popup to expose an "initialised" flag purely for
+        # tests. Note this window is a test-automation artifact: a human cannot
+        # type into a popup before it has rendered and initialised.
+        # Poll on the REAL end condition - the value being in storage.local -
+        # and re-enter it each attempt. Checking only that the DOM field holds
+        # the value is not enough: restoreState() can still land in the gap
+        # between that check and the next keystroke, blanking `find` again, and
+        # then the persist triggered by the following field writes find:"".
+        # Observed exactly that: the field read back "persist-me" while storage
+        # recorded find:"" alongside a correctly-persisted replace/matchCase.
+        deadline = time.time() + 15
         stored = None
         while time.time() < deadline:
+            find_box.clear()
+            find_box.send_keys("persist-me")
+            replace_box.clear()
+            replace_box.send_keys("restored")
+
             stored = self.driver.execute_script(
                 "return browser.storage.local.get(null).then(r => r);"
             )
-            if stored:
+            if stored and "persist-me" in json.dumps(stored):
                 break
             time.sleep(0.25)
 
         self.assertTrue(stored, "nothing was written to storage.local")
+        self.assertIn(
+            "persist-me",
+            json.dumps(stored),
+            "the typed value never reached storage.local within 15s - popup "
+            "init may still be overwriting the field after it is typed",
+        )
+
+        self.driver.find_element(By.ID, "match-case-checkbox").click()
+
+        # The checkbox was clicked after the loop above, so wait for that
+        # specific change to land too before reloading - otherwise the
+        # reload can race the persist and matchCase reads back false.
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            stored = self.driver.execute_script(
+                "return browser.storage.local.get(null).then(r => r);"
+            )
+            if stored and '"matchCase": true' in json.dumps(stored):
+                break
+            time.sleep(0.25)
+
+        self.assertIn(
+            '"matchCase": true',
+            json.dumps(stored),
+            "the match-case checkbox state never reached storage.local",
+        )
 
         # Reload the popup and confirm the values come back.
         self.driver.get(POPUP_URL)
@@ -396,7 +464,12 @@ class ExtensionE2ETest(unittest.TestCase):
             )
             self.assertEqual(opened, "clicked",
                              "unified extensions button not found in chrome UI")
-            time.sleep(2)
+            # Wait for the panel to actually populate rather than assuming
+            # a fixed delay is enough - see _wait_until.
+            _wait_until(
+                self.driver,
+                "return document.querySelectorAll('[data-extensionid]').length > 0;",
+            )
 
             result = self.driver.execute_script(
                 """
@@ -454,7 +527,12 @@ class ExtensionE2ETest(unittest.TestCase):
             self.driver.execute_script(
                 "document.getElementById('unified-extensions-button').click();"
             )
-            time.sleep(2)
+            # Wait for the panel to actually populate rather than assuming
+            # a fixed delay is enough - see _wait_until.
+            _wait_until(
+                self.driver,
+                "return document.querySelectorAll('[data-extensionid]').length > 0;",
+            )
             clicked = self.driver.execute_script(
                 """
                 const nodes = document.querySelectorAll('[data-extensionid]');
@@ -470,7 +548,21 @@ class ExtensionE2ETest(unittest.TestCase):
                 """.replace("__ADDON_ID__", ADDON_ID)
             )
             self.assertTrue(clicked, "could not click the extension's toolbar action")
-            time.sleep(4)  # popup opens, init() runs, injection is attempted
+            # Wait for the popup to actually load rather than guessing at a
+            # duration: its browser element reports a moz-extension URI once
+            # the document is live. init() then runs and attempts injection.
+            _wait_until(
+                self.driver,
+                "const bs = document.querySelectorAll('browser');"
+                "for (const b of bs) {"
+                "  try { const u = b.currentURI ? b.currentURI.spec : '';"
+                "    if (u && u.indexOf('moz-extension') === 0) return true; } catch (e) {}"
+                "}"
+                "return false;",
+            )
+            # The injection itself is async after that; give it a bounded
+            # window to either succeed or log an error.
+            time.sleep(2)
 
             # WHY THE CONSOLE AND NOT window.__ffr:
             # a real content script runs in an ISOLATED world, so a property it
