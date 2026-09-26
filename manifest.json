@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Form Field Find & Replace",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Find and replace text across the editable form fields of the current page.",
   "browser_specific_settings": {
     "gecko": {
@@ -26,6 +26,11 @@
   },
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "Form Field Find & Replace"
+    "default_title": "Form Field Find & Replace",
+    "default_icon": "icons/icon.svg"
+  },
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
   }
 }

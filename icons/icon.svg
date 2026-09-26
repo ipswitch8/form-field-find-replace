@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16"
+     role="img" aria-label="Form Field Find and Replace">
+  <!--
+    Toolbar/addon icon: a magnifier (find) whose lens contains a two-way arrow
+    (replace). Drawn on a 16x16 grid because 16px is the size that has to
+    survive - the toolbar button. Everything larger is this same vector scaled,
+    so there is no raster set to keep in sync.
+
+    Two things were measured rather than assumed, by rendering this at 16/32/
+    48/96 on both a light (#f9f9fb) and a dark (#2b2a33) background and looking
+    at the result:
+
+      - The first draft used 1.1px interior strokes. At 16px those fall below
+        a device pixel and the arrows turned to mush. Stroke weights are now
+        1.7 (lens) and 1.5 (arrows), and the arrows are larger and further
+        apart, so the glyph still reads as "magnifier containing a swap".
+      - The first draft's #4d5b6a fallback was near-invisible on a dark
+        background. The colour below is a mid-slate chosen to clear both,
+        rather than one tuned for a white background alone.
+
+    -moz-context-properties lets Firefox recolour the icon to match the
+    toolbar, so on the toolbar itself it adapts to the theme and the literal
+    colour is only a fallback for contexts that supply no context properties
+    (about:addons, AMO listings).
+
+    No script, no external references, no embedded raster data.
+  -->
+  <style>
+    svg { -moz-context-properties: fill, stroke, fill-opacity, stroke-opacity; }
+  </style>
+
+  <g fill="none" stroke="context-stroke #7c8b9e" stroke-linecap="round"
+     stroke-linejoin="round">
+    <!-- Lens and handle -->
+    <circle cx="6.5" cy="6.5" r="5.0" stroke-width="1.7"/>
+    <path d="M10.3 10.3 L14.4 14.4" stroke-width="2"/>
+
+    <!-- Two-way arrow inside the lens: the "replace" half of the idea. -->
+    <path d="M3.7 5.2 H8.9" stroke-width="1.5"/>
+    <path d="M7.5 3.9 L8.9 5.2 L7.5 6.5" stroke-width="1.5"/>
+    <path d="M9.3 8.2 H4.1" stroke-width="1.5"/>
+    <path d="M5.5 9.5 L4.1 8.2 L5.5 6.9" stroke-width="1.5"/>
+  </g>
+</svg>

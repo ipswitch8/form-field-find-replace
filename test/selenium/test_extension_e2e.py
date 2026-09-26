@@ -445,6 +445,65 @@ class ExtensionE2ETest(unittest.TestCase):
         self.assertIn("hello", values["text"])
 
 
+    def test_toolbar_action_uses_our_icon_not_the_default_puzzle_piece(self):
+        """The toolbar button shows icons/icon.svg, not Firefox's fallback.
+
+        Firefox substitutes a generic puzzle-piece glyph when an extension
+        declares no icon. Nothing in the manifest is required for the add-on to
+        work, so dropping `action.default_icon` or the `icons` block would be a
+        silent cosmetic regression that no functional test would notice.
+
+        This asserts the real chrome UI resolves the button's image to a
+        moz-extension:// URL ending in our SVG. It is checked in browser chrome
+        because that is where the toolbar lives - page context cannot see it.
+        """
+        self.driver.get(FIXTURE)
+        self.driver.set_context("chrome")
+        try:
+            self.driver.execute_script(
+                "document.getElementById('unified-extensions-button').click();"
+            )
+            _wait_until(
+                self.driver,
+                "return document.querySelectorAll('[data-extensionid]').length > 0;",
+            )
+
+            icon_urls = self.driver.execute_script(
+                """
+                const out = [];
+                const nodes = document.querySelectorAll('[data-extensionid]');
+                for (const n of nodes) {
+                  if ((n.getAttribute('data-extensionid') || '') !== '__ADDON_ID__') {
+                    continue;
+                  }
+                  for (const el of [n, ...n.querySelectorAll('*')]) {
+                    try {
+                      const li = el.ownerGlobal.getComputedStyle(el).listStyleImage;
+                      if (li && li !== 'none') out.push(li);
+                    } catch (e) {}
+                  }
+                  break;
+                }
+                return out;
+                """.replace("__ADDON_ID__", ADDON_ID)
+            )
+        finally:
+            self.driver.set_context("content")
+
+        joined = " ".join(icon_urls)
+        self.assertIn(
+            "icons/icon.svg",
+            joined,
+            "the toolbar button is not using our icon - Firefox is likely "
+            "falling back to the default puzzle piece. Resolved images were: "
+            "{}".format(icon_urls),
+        )
+        self.assertIn(
+            "moz-extension://",
+            joined,
+            "the icon did not resolve to an extension-owned URL: {}".format(icon_urls),
+        )
+
     def test_toolbar_action_is_registered_and_clickable(self):
         """The extension's toolbar action exists and can be invoked.
 

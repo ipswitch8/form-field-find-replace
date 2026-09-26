@@ -3,19 +3,15 @@
   "pipeline_id": "undo-bug",
   "pipeline_generated_at": "2026-09-25T00:00:00Z",
   "pipeline_content_sig": "9a4cb32ad44caea4e3a8e17fa8b7e87acce7722ac4297f9c7c32ee30eb904d6a",
-  "current_phase_index": 2,
+  "current_phase_index": 3,
   "phases_complete": [
     "phase-1",
-    "phase-2"
+    "phase-2",
+    "phase-3"
   ],
-  "current_gate_results": {
-    "karen": true,
-    "validator": true,
-    "test-runner": true,
-    "claim-check": true
-  },
+  "current_gate_results": {},
   "awaiting_commit": false,
-  "gate_phase_id": "phase-3",
+  "gate_phase_id": "",
   "gate_results_by_phase": {
     "phase-1": {
       "karen": true,
@@ -37,5 +33,5 @@
       "claim-check": true
     }
   },
-  "commit_marker_head": "867afd9f03a2bfc35aa3b9365be4bc579011ad55"
+  "commit_marker_head": ""
 }
