@@ -1,20 +1,28 @@
 {
   "manifest_version": 3,
   "name": "Form Field Find & Replace",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Find and replace text across the editable form fields of the current page.",
   "browser_specific_settings": {
     "gecko": {
       "id": "mhasse@itwerx.net",
       "strict_min_version": "115.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
   },
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "action": {
     "default_popup": "popup/popup.html",
