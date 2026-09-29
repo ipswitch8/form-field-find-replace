@@ -3,18 +3,14 @@
   "pipeline_id": "whitespace-bug",
   "pipeline_generated_at": "2026-09-29T00:00:00Z",
   "pipeline_content_sig": "8bfec2fed6ee522eecc7c7b792cad83fa9df3748c158798292d9dc8aded19052",
-  "current_phase_index": 1,
+  "current_phase_index": 2,
   "phases_complete": [
-    "phase-1"
+    "phase-1",
+    "phase-2"
   ],
-  "current_gate_results": {
-    "karen": true,
-    "validator": true,
-    "test-runner": true,
-    "claim-check": true
-  },
+  "current_gate_results": {},
   "awaiting_commit": false,
-  "gate_phase_id": "phase-2",
+  "gate_phase_id": "",
   "gate_results_by_phase": {
     "phase-1": {
       "karen": true,
@@ -29,5 +25,5 @@
       "claim-check": true
     }
   },
-  "commit_marker_head": "45cbe49a942c7b11f0ab15bcfc23edcd49bf774d"
+  "commit_marker_head": ""
 }
