@@ -1,0 +1,25 @@
+{
+  "pipeline": ".claude/pipelines/whitespace-bug/pipeline.json",
+  "pipeline_id": "whitespace-bug",
+  "pipeline_generated_at": "2026-09-29T00:00:00Z",
+  "pipeline_content_sig": "8bfec2fed6ee522eecc7c7b792cad83fa9df3748c158798292d9dc8aded19052",
+  "current_phase_index": 0,
+  "phases_complete": [],
+  "current_gate_results": {
+    "karen": true,
+    "validator": true,
+    "test-runner": true,
+    "claim-check": true
+  },
+  "awaiting_commit": false,
+  "gate_phase_id": "phase-1",
+  "gate_results_by_phase": {
+    "phase-1": {
+      "karen": true,
+      "validator": true,
+      "test-runner": true,
+      "claim-check": true
+    }
+  },
+  "commit_marker_head": "295d2ede6da734e99fbf35de3c761667823ff330"
+}

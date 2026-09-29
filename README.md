@@ -244,6 +244,52 @@ imperceptible as a single frame) while keeping total overhead low. This
 number is recorded as a comment at the `CHUNK_SIZE` declaration in
 `content/find-replace.js` alongside the same measurements.
 
+## Spaces in rich-text fields
+
+When you type two or more consecutive spaces into a rich-text
+(`contenteditable`) field, the browser does not store them as plain spaces. It
+substitutes **U+00A0**, the non-breaking space, for some of them — otherwise
+HTML would collapse the run down to a single visible space. Typing three spaces
+typically yields the sequence `NBSP, space, NBSP`.
+
+This is invisible to you: the field looks like three spaces, and copying the
+text out reads back as three space-looking characters. But a search for three
+*plain* spaces is three `U+0020` characters, and those do not equal `U+00A0` —
+so the search finds nothing, while the same phrase without leading spaces
+matches immediately.
+
+In **plain** and **whole word** modes, each literal space you type in the Find
+box therefore matches either a plain space or a non-breaking space:
+
+| Codepoint | | Matched by a typed space? |
+|---|---|---|
+| `U+0020` | space | **Yes** |
+| `U+00A0` | no-break space | **Yes** — this is what the browser substitutes |
+| `U+2007` | figure space | No |
+| `U+202F` | narrow no-break space | No |
+| `U+2009` | thin space | No |
+
+The last three are deliberate typographic characters — someone inserted them on
+purpose. A plain space silently matching them would make a destructive replace
+touch text you never meant to touch, so they are excluded. If you do want to
+match them, use **regular expression** mode, where JavaScript's `\s` covers all
+of them.
+
+**Regex mode is unaffected.** Your pattern is passed through exactly as written,
+and `\s` already matches `U+00A0`.
+
+### What happens to the non-breaking spaces when you replace
+
+If a match containing non-breaking spaces is replaced, the replacement is
+inserted exactly as you typed it. So replacing `"   to a brief"` with
+`"   to a summary"` writes three *plain* spaces where the browser had put
+non-breaking ones — and HTML will then collapse them to a single visible space.
+
+That is a real, visible change to the document's spacing, and it is deliberate:
+the alternative is second-guessing which of your replacement's characters ought
+to become non-breaking, which would be worse. If you need the indentation
+preserved, type non-breaking spaces into the Replace box, or use regex mode.
+
 ## Known limitations
 
 - **Closed shadow roots are unreachable by design.** There is no supported

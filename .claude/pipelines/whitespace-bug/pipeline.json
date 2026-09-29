@@ -1,0 +1,50 @@
+{
+  "task": "Fix the Firefox extension bug where searching a contenteditable field for a needle with leading/internal literal spaces (e.g. \"   to a brief\") fails to match, because Firefox substitutes U+00A0 (NBSP) for consecutive spaces as the user types into contenteditable, while textContent still reads back as space-looking characters. Make the compiled matcher's literal-space handling tolerant of whitespace variants in PLAIN and WHOLE-WORD modes, leave REGEX mode untouched (JS \\s already covers U+00A0), and explicitly address the replace-time consequence of a matched NBSP being overwritten by a plain-space replacement string. Promote or remove test/probe-whitespace.spec.js. Keep all 75 existing Playwright tests and 8 existing Selenium tests passing.",
+  "pipeline_id": "whitespace-bug",
+  "generated_at": "2026-09-29T00:00:00Z",
+  "total_phases": 2,
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Red-baseline the whitespace regression tests",
+      "description": "Write Playwright regression tests that reproduce the bug at the matcher level using real keyboard-typed contenteditable input (not hand-authored HTML), pin regex-mode as unchanged, pin the replace-time NBSP-collapse consequence, document the whitespace-variant decision, and prove the new tests fail against the current (unfixed) content/find-replace.js.",
+      "acceptance_criteria": [
+        "A new Playwright spec file (e.g. test/whitespace-matching.spec.js) exists containing at least these distinct test cases: (1) typing '   to a brief' via page.keyboard.type into an empty contenteditable div, then searching PLAIN mode for the literal string '   to a brief' (three leading ASCII U+0020 spaces), must find a match — this is the exact repro from the diagnosis and MUST currently fail against unmodified content/find-replace.js; (2) the same typed-NBSP scenario in WHOLE-WORD mode with a leading space in the needle; (3) a hand-authored (non-typed) contenteditable containing real ASCII spaces still matches the same needle (regression guard proving the matcher itself is not broken by the fix, mirrors the existing diagnosis finding); (4) a REGEX-mode test asserting the pattern `\\\\s+to a brief` already matches typed NBSP content on current unmodified code (pins that regex mode requires no change and must PASS before and after the fix, not just after)",
+        "The decision on which whitespace codepoints the PLAIN/WHOLE-WORD literal-space character class must match is written down explicitly, either as a code comment at the relevant constant/function in content/find-replace.js or as a dedicated section in README.md, and names at minimum U+0020 (space) and U+00A0 (NBSP) as required, with an explicit yes/no decision recorded for each of U+2007 (figure space), U+202F (narrow no-break space), and U+2009 (thin space) — not left implicit",
+        "For every whitespace codepoint the decision document marks 'included', a dedicated test case exists in the new spec file asserting a needle with a plain space matches page content containing that exact codepoint at that position (test asserts on the literal codepoint via String.fromCodePoint, not by eyeballing a copy-pasted character)",
+        "A test exists covering the replace-time NBSP-collapse consequence: matching text that contains U+00A0 in the DOM, replacing it with a replacement string containing plain U+0020 characters, then asserting what the resulting node's nodeValue/textContent actually contains (either 'the NBSPs are gone, replaced by the literal replacement characters' or an alternate documented behavior) — the assertion must reference specific codepoints, not just string equality, and the chosen behavior is stated in prose in the same file or README.md",
+        "Running `npx playwright test test/whitespace-matching.spec.js` against the current, unmodified content/find-replace.js produces at least one FAILURE in test case (1) (and (2) if wholeWord shares the same needle-compile path) — the failure output (test name + assertion diff) is captured and quoted in the phase's completion evidence, proving the test is not a vacuous pass-either-way test",
+        "test/probe-whitespace.spec.js is either deleted or its content is fully absorbed into the new spec file with no leftover duplicate probe file in test/",
+        "The pre-existing 75 Playwright tests (all files under test/*.spec.js other than the new whitespace spec and the now-removed probe) still pass unmodified, run via `npm test` or an equivalent scoped Playwright invocation, with no test weakened, skipped, or deleted to make this true"
+      ],
+      "gate_agents": [
+        "karen",
+        "validator",
+        "test-runner",
+        "claim-check"
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "Implement the whitespace-tolerant matcher fix",
+      "description": "Modify buildMatcher (and its literal-space compilation path) in content/find-replace.js so PLAIN and WHOLE-WORD mode needles treat each literal space as a character class covering the decided whitespace variants, without touching REGEX mode or normalising page content, then turn every phase-1 regression test green and keep the full existing suite green.",
+      "acceptance_criteria": [
+        "content/find-replace.js's buildMatcher/escapeRegExp path compiles each literal ASCII space (U+0020) in a PLAIN- or WHOLE-WORD-mode needle into a character class matching, at minimum, U+0020 and U+00A0, plus exactly the additional codepoints marked 'included' in phase 1's decision document, and does not alter behavior when regex option is true",
+        "REGEX mode's source string is passed through unmodified by the fix — a diff of buildMatcher shows the `opts.regex` branch is untouched (no whitespace-class substitution applied to user-supplied regex source)",
+        "The page-facing DOM/value content is never rewritten or normalized by the fix — grep of the diff confirms no new writes to nodeValue/innerHTML/value in the matching (non-replace) code path; NBSPs already present in the page are left exactly as typed unless a match against them is actually replaced by the user's own replacement string",
+        "All test cases added in test/whitespace-matching.spec.js in phase 1 now pass, including the previously-failing typed-NBSP PLAIN-mode case and the whole-word case",
+        "The REGEX-mode pinning test from phase 1 still passes unchanged, demonstrating no behavioral change to regex mode",
+        "The replace-time NBSP-collapse consequence test from phase 1 passes and its asserted behavior matches the documented decision in README.md/CLAUDE.md — if the decision is that a plain-space replacement collapses NBSPs, README.md's Known limitations (or an equivalent documented section) states this explicitly as a conscious behavior, not left undocumented",
+        "The complete Playwright suite (previous 75 tests + the new whitespace spec, probe file removed) passes via `npm test`, with `test-results/gtest-results.xml` produced showing zero failures",
+        "The Selenium suite's 8 tests still pass via `npm run test:selenium`, unmodified and unweakened, confirming the fix does not depend on or break the real-extension activation/injection path",
+        "CHUNK_SIZE, the message-passing shape, and all other SPEC.md-mandated behaviors outside the matcher's literal-space compilation are unchanged (no incidental refactor beyond the matcher fix), verified by `git diff` scoped to content/find-replace.js showing only the buildMatcher/related-constant change plus any documentation touched"
+      ],
+      "gate_agents": [
+        "karen",
+        "validator",
+        "test-runner",
+        "claim-check"
+      ]
+    }
+  ]
+}
