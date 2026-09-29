@@ -399,6 +399,49 @@
   }
 
   /**
+   * The character class a literal space compiles to in PLAIN and WHOLE-WORD
+   * modes.
+   *
+   * WHY THIS EXISTS: when the user types two or more consecutive spaces into a
+   * contenteditable, the browser substitutes U+00A0 (no-break space) for some
+   * of them, because HTML would otherwise collapse the run to one visible
+   * space. Typing three spaces yields NBSP, space, NBSP. The field looks like
+   * three spaces and textContent reads back as three space-looking characters,
+   * but a needle of three U+0020 does not equal U+00A0 - so searching for
+   * "   to a brief" found nothing while "to a brief" matched immediately.
+   *
+   * WHY ONLY THESE TWO: U+00A0 is what the browser silently substitutes for a
+   * space the user typed, so matching it restores their intent. U+2007 (figure
+   * space), U+202F (narrow no-break space) and U+2009 (thin space) are
+   * deliberately NOT included - they are typographic characters someone
+   * inserted on purpose, and a plain space silently matching them would make a
+   * destructive replace touch text the user never meant. Widening this to \s
+   * would do exactly that; test/whitespace-matching.spec.js has three
+   * exclusion tests that reject such a fix.
+   *
+   * Regex mode is deliberately untouched: JavaScript's \s already matches
+   * U+00A0, so a regex user already has control. See README.md, "Spaces in
+   * rich-text fields", for the user-facing statement of this decision and of
+   * what happens to the NBSPs when a match is replaced.
+   */
+  const LITERAL_SPACE_CLASS = "[ \\u00A0]";
+
+  /**
+   * Widen each literal space in an ALREADY-ESCAPED plain-mode pattern into
+   * LITERAL_SPACE_CLASS. Safe to run after escapeRegExp: a space is not a
+   * regex metacharacter, so escaping never introduces or consumes one, and
+   * the spaces present here are exactly the ones the user typed. A needle
+   * mixing metacharacters and spaces - "$5.00 each" - therefore escapes to
+   * "\$5\.00 each" and widens to "\$5\.00[  ]each", leaving the escaped
+   * characters intact. test/whitespace-matching.spec.js pins that.
+   * @param {string} escapedSource
+   * @returns {string}
+   */
+  function widenLiteralSpaces(escapedSource) {
+    return escapedSource.replace(/ /g, LITERAL_SPACE_CLASS);
+  }
+
+  /**
    * Build the shared matcher RegExp used by both the count path and (in
    * phase 3) the replace path, from the popup's find string and options.
    * Never throws: a bad user regex is caught and surfaced as an error
@@ -410,7 +453,11 @@
   function buildMatcher(find, options) {
     const opts = options || {};
     const flags = "g" + (opts.matchCase ? "" : "i");
-    let source = opts.regex ? find : escapeRegExp(find);
+    // Regex mode passes the user's source through untouched - they control the
+    // pattern, and \s already covers U+00A0. Plain mode escapes first, then
+    // widens literal spaces so a typed space also matches the NBSP the browser
+    // substituted for it (see LITERAL_SPACE_CLASS).
+    let source = opts.regex ? find : widenLiteralSpaces(escapeRegExp(find));
 
     if (opts.wholeWord) {
       source = opts.regex ? `\\b(?:${source})\\b` : `\\b${source}\\b`;

@@ -173,6 +173,51 @@ test.describe("whitespace matching in rich-text fields", () => {
     });
   }
 
+  // ---- Escaping and widening must not interfere -------------------------
+  //
+  // The widening runs on the ALREADY-ESCAPED pattern, replacing every literal
+  // space. The argument that this is safe - a space is not a regex
+  // metacharacter, so escaping neither introduces nor consumes one - was for a
+  // while only an argument, written in a comment. A gate flagged that as
+  // load-bearing-but-unmechanised, which it was. These pin it.
+
+  test("a needle mixing metacharacters and spaces still matches literally", async ({
+    page,
+  }) => {
+    await load(page, "<div></div>");
+    // "$" and "." are regex metacharacters; if escaping and widening
+    // interfered, this would either throw or match the wrong thing.
+    const haystack = "pay $5.00 each month";
+    const r = await matches(page, haystack, "$5.00 each", PLAIN);
+    expect(r.error).toBeNull();
+    expect(r.matched).toBe(true);
+  });
+
+  test("a metacharacter needle stays literal - '$5.00 each' must not match '$5x00 each'", async ({
+    page,
+  }) => {
+    await load(page, "<div></div>");
+    // If the "." survived as a regex wildcard rather than being escaped, this
+    // would match. It must not.
+    const r = await matches(page, "pay $5x00 each month", "$5.00 each", PLAIN);
+    expect(r.error).toBeNull();
+    expect(r.matched).toBe(false);
+  });
+
+  test("a metacharacter needle still matches across a substituted NBSP", async ({
+    page,
+  }) => {
+    await load(page, "<div></div>");
+    // Both behaviours at once: the "$" and "." stay literal AND the space
+    // widens to cover the NBSP a browser would have substituted.
+    const haystack = "pay $5.00" + String.fromCodePoint(0x00a0) + "each month";
+    expect(haystack.codePointAt(9)).toBe(0x00a0);
+
+    const r = await matches(page, haystack, "$5.00 each", PLAIN);
+    expect(r.error).toBeNull();
+    expect(r.matched).toBe(true);
+  });
+
   // ---- The replace-time consequence -------------------------------------
 
   test("replacing a match containing NBSP writes the replacement literally, collapsing the NBSPs", async ({
