@@ -69,6 +69,30 @@ current page. Name it **Form Field Find & Replace**.
   is enabled only while a run is in flight.
 - Persist the last-used find/replace strings, option states, and field-type selections in
   `storage.local`.
+- **Remembered history.** Keep a bounded list of previous searches and offer it as a
+  dropdown on the Find and Replace boxes. One shared list of *paired* entries: each
+  records the find value, the replace value, all four option flags and the whole
+  field-type map together, and selecting an entry restores the lot. Not two independent
+  find-only/replace-only lists — a remembered regex source recalled without its `regex`
+  flag would be searched for literally and report no matches.
+  - `storage.local` key `formFieldFindReplaceHistory`, separate from the last-typed-state
+    key so the two can be cleared independently. Bounded at 20 entries, newest first;
+    an exact duplicate re-record moves to the front rather than duplicating, selecting an
+    entry promotes it, and the tail is dropped past the bound.
+  - Recorded only when **Count matches** or **Replace all** is invoked with a non-empty
+    find — never on keystrokes, which would fill the list with prefixes of half-typed
+    words.
+  - ARIA combobox/listbox: `role="combobox"` with `aria-expanded`/`aria-controls` on the
+    input, `role="listbox"`/`role="option"` for the overlay and its rows, arrow keys to
+    navigate, Enter to select, and Escape scoped to the dropdown before the popup's own
+    Escape handling. Rows built with `createElement`/`textContent` only.
+  - A **Clear history** control on each dropdown, emptying the list without disturbing
+    what is currently typed.
+- **Fit inside the popup without scrolling.** A Firefox popup is capped at 800x600 and
+  scrolls past that, so every disclosure state must fit — field types expanded (the
+  default), the undo-cap banner showing, the longest status line, a dropdown open, and
+  all at once. Achieve it by layout density, not by `max-height`/`overflow`, and not by
+  defaulting the field-types section to collapsed. Measure it; do not eyeball it.
 - Keyboard: Enter runs Replace all, Escape cancels a run in progress or otherwise closes.
 - Style it plainly — system font stack, respects `prefers-color-scheme`. No frameworks.
 

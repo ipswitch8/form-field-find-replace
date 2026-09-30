@@ -298,19 +298,9 @@ focusing) either box opens a dropdown of previous entries; picking one refills
 
 This section is the design decision, written down before the code was built,
 because several of its choices are load-bearing and would otherwise look
-arbitrary to the next reader. It is therefore written in the present tense
-throughout, describing the finished feature.
-
-> **Implementation status — delete this note once it is no longer true.**
-> As of this commit the persistence layer is in place: entries are recorded,
-> bounded and restored from `storage.local`. The **dropdown itself is not built
-> yet**, so anything below describing clicking, keyboard navigation, selecting
-> an entry, or selection promoting an entry to the front is design intent, not
-> current behaviour. `popup/popup.js` says the same thing at the point where it
-> would matter. This note exists because a gate caught this section describing
-> selection promotion in the present tense while no select path existed — on
-> this project, prose that outlives the code it describes has already caused
-> three defects.
+arbitrary to the next reader. Everything it describes is now implemented — the
+"implementation status" note that sat here while the dropdown was still being
+built has been deleted, which is what it asked to have happen.
 
 ### One shared list of paired entries, not two independent lists
 
@@ -406,6 +396,71 @@ Listbox containers and option rows both carry stable `id` and `data-testid`
 attributes, so Selenium and Playwright can address them without relying on
 position or text.
 
+`ArrowDown` and `ArrowUp` also *open* a closed dropdown and land on the first
+or last entry, so the whole feature is reachable without a mouse. `Tab` closes
+it and moves on normally. Wrapping is deliberate: `ArrowUp` from nothing goes
+straight to the oldest remembered search, which on a twenty-entry list is one
+keystroke instead of nineteen.
+
+A dropdown, being an overlay, covers what is beneath it while open. In the
+two-column layout that means the Options checkboxes sit under the Find
+dropdown. Dismiss it — `Escape`, a click elsewhere, or picking an entry — and
+they are reachable again. That is ordinary combobox behaviour rather than a
+quirk, and there is a test for it.
+
+### Clearing the remembered list
+
+Each dropdown has a **Clear history** button at its foot. It empties the list
+in memory and in `storage.local`, closes the dropdown, and leaves whatever you
+are currently typing — find, replace, and every option — untouched.
+
+There is no confirmation prompt. Forgetting a past search destroys nothing, and
+a prompt in front of a harmless action just trains people to click through
+prompts.
+
+It exists because a security review pointed out something the feature's own
+design had glossed over: this extension already put the popup's typed text in
+`storage.local`, but bounding history at twenty entries took *retention* from
+one entry to twenty. Someone who pastes a password or a customer record into
+the Find box needs a way to get rid of it that does not involve clearing their
+whole browser profile.
+
+## Popup size: why it is 620px wide and cannot be taller
+
+A Firefox extension popup cannot exceed **800x600**. Past that Firefox does not
+grow the panel, it scrolls it — so the popup's height is not something the
+stylesheet gets to choose, and "make it taller" is not a fix available for a
+layout that does not fit.
+
+The popup is 620px wide, which leaves 180px of headroom under the cap for a
+longer translated label or a wider system font, and is wide enough for two
+columns. The columns are what buys the height back: Find beside Replace,
+Options beside Field types, and the thirteen field-type checkboxes flowing into
+a grid instead of thirteen stacked rows.
+
+In its default state — field types expanded, as a user first sees it — the
+popup is 481px tall. Before this layout it was 1032px, i.e. it scrolled
+immediately, on every open, with nothing to be done about it from inside the
+popup.
+
+`test/popup-layout.spec.js` holds that. It measures
+`scrollHeight <= clientHeight` with zero tolerance, and the content height
+against the 600px cap, in five states: the default; the undo-cap banner at its
+longest; the longest realistic status line; a dropdown open; and all of those
+at once. It also asserts that opening a dropdown changes the document's height
+by exactly zero, and that the fit does not depend on the field-types section
+being collapsed — because defaulting that section to collapsed would have made
+the numbers pass while leaving the popup as unhelpful as before.
+
+The same spec deliberately does **not** rely on Playwright's default viewport,
+which is far taller than a real popup and would let an overflowing document
+look fine. It reads the width the stylesheet declares and pins the height to
+the 600px cap.
+
+`popup/popup.css` carries a measured table showing which parts of the layout
+actually do the work, because two earlier versions of that comment guessed and
+were wrong both times.
+
 ## Known limitations
 
 - **Closed shadow roots are unreachable by design.** There is no supported
@@ -452,9 +507,30 @@ CommonJS config, or the `--ignore-files` CLI flag, actually changes what
 `lint`/`build` see. This was verified empirically against the installed
 version before relying on it.)
 
-With that in place, `npx web-ext lint` reports **0 errors and 2 warnings**, both
-`KEY_FIREFOX_UNSUPPORTED_BY_MIN_VERSION` (desktop and Android), for
-`data_collection_permissions`.
+### The exclusion list is not the whole guard
+
+`ignoreFiles` only excludes what someone thought of, and something once got
+through it. A shell redirect to the Windows reserved device name `nul` does not
+discard output — it creates a real directory called `nul`. Git cannot stat such
+a path, so `.gitignore` never applied and `git status` never mentioned it, and
+`web-ext` happily packaged `nul/.last-run.json`, a Playwright run cache, inside
+the shipped `.xpi`. A security review found it there. The contents were inert,
+but it had no business in a file a user installs.
+
+`nul`, `con`, `prn` and `aux` are now in `ignoreFiles`, which fixes that name.
+The general fix is that **`npm run check:xpi` now asserts an allowlist**: the
+archive must contain exactly the seven files the extension ships (plus
+`META-INF/*` on a signed build) and nothing else, whatever it is called. A stray
+entry exits `3` — distinct from the `1` that merely means "this dev build is not
+signed yet" — so a packaging defect reads differently from a missing signing
+step.
+
+That check was verified by reproducing the original leak: injecting
+`nul/.last-run.json` into a built archive makes it fail and name the file.
+
+With the exclusions in place, `npx web-ext lint` reports **0 errors and 2
+warnings**, both `KEY_FIREFOX_UNSUPPORTED_BY_MIN_VERSION` (desktop and Android),
+for `data_collection_permissions`.
 
 That key is declared as `{"required": ["none"]}` — accurate, since nothing here
 collects data (see `CLAUDE.md`'s "nothing leaves the browser" rule). It is

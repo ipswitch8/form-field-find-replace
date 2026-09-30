@@ -51,7 +51,39 @@ their own data. Those are out of scope for a client-side content script.
 | `activeTab` | Grants temporary access to the tab the user is currently interacting with, only after an explicit user gesture (clicking the toolbar action). | This is what makes `host_permissions` unnecessary. `activeTab` never persists across navigations or tabs, so there is no ambient access sitting in the background. |
 | `scripting` | Lets the **popup** call `browser.scripting.executeScript` to inject `content/find-replace.js` into the active tab, on demand, at the moment the user invokes the extension. | Injection is per-invocation, not declarative. The manifest has no `content_scripts` entry and no `matches` pattern — the extension is not present on any page until the user asks for it. |
 
-| `storage` | Persists the last-used find/replace strings, checkbox states, and field-type selections in `storage.local` between popup opens. | `storage.local` is local to the browser profile. Nothing is synced, nothing is remote. |
+| `storage` | Persists, in `storage.local`, two things under two separate keys: (a) `formFieldFindReplace` — the last-used find/replace strings, checkbox states, and field-type selections, so the popup reopens as you left it; and (b) `formFieldFindReplaceHistory` — a **bounded list of at most 20 previous searches**, each pairing a find value, a replace value, all four option flags and the complete field-type map, which the Find/Replace dropdowns offer back to you. | `storage.local` is local to the browser profile. Nothing is synced, nothing is remote — the extension never touches the `sync` area, and a test scans `popup/popup.js`'s own source and installs a runtime spy to prove it. |
+
+### What the remembered history does and does not change about the threat model
+
+This is called out explicitly because it was reviewed and the review's reasoning
+is worth keeping.
+
+The history introduces **no new data class**. It stores the same thing the
+last-used-state key already stored — text the user typed into the popup's own
+boxes — in the same place, `storage.local`, reachable by the same permission,
+with the same zero network calls. It is not page content: `collectState()` reads
+`els.find.value` and `els.replace.value`, never a field on the page.
+
+What it does change is **retention depth**: from one entry to twenty. That is a
+real difference. A password or a customer record pasted into the Find box now
+persists across up to twenty entries instead of being overwritten by the next
+search. Three things bound that:
+
+- **The list is capped at 20**, enforced on both the write path
+  (`recordHistoryEntry`) and the read path (`loadHistory`), so a hand-tampered
+  oversized array cannot survive a load or be written back oversized.
+- **Nothing is recorded without a deliberate action.** Only `Count matches` and
+  `Replace all`, and only with a non-empty find. Typing records nothing.
+- **A `Clear history` control exists** on both dropdowns, which empties the list
+  in memory and in `storage.local`. Added because the absence of one was raised
+  as a finding: increasing retention without offering a way to undo it would have
+  left the user no recourse short of clearing their profile.
+
+Values come back out through `normalizeHistoryEntry`, which treats stored data
+as untrusted in *shape* — a hand-edited or half-written value cannot throw during
+startup — and emits strings and booleans only. A remembered value is inert data:
+nothing reads it as markup, and nothing compiles it as a regex unless the user's
+own `regex` checkbox says so.
 
 ### Why injection is popup-driven, not background-driven
 

@@ -1522,6 +1522,37 @@ test.describe("dropdown interaction safety", () => {
     await expect(page.locator("#replace-input")).toHaveValue("yes");
   });
 
+  test("Tab closes the dropdown and moves focus on normally", async ({ page }) => {
+    // README documents Tab as closing the dropdown. A gate pointed out that
+    // branch was reachable by inspection but pinned by no named test, while its
+    // neighbours (ArrowDown/Up, Enter, Escape) all had one - so it was the one
+    // keyboard claim in the docs nothing would catch regressing.
+    await mountPopup(page, {
+      history: [entry({ find: "first", replace: "1st" })],
+    });
+
+    await page.locator("#find-input").click();
+    await expect(page.locator("#find-history-listbox")).toBeVisible();
+
+    await page.keyboard.press("Tab");
+    await expect(page.locator("#find-history-overlay")).toBeHidden();
+    await expect(page.locator("#find-input")).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
+
+    // Tab must still do its own job - it closes the list rather than being
+    // swallowed by it, so focus moves on. (Escape is the key that is consumed;
+    // Tab is not.)
+    const moved = await page.evaluate(
+      () => document.activeElement && document.activeElement.id
+    );
+    expect(moved).not.toBe("find-input");
+
+    // And the typed value is untouched by the dismissal.
+    await expect(page.locator("#find-input")).toHaveValue("");
+  });
+
   test("clicking outside closes the dropdown and leaves the input untouched", async ({
     page,
   }) => {

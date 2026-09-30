@@ -36,6 +36,23 @@ module.exports = {
     ".claude/**",
     ".claude-flow/**",
     ".git/**",
+    // Windows reserved device names. On this platform a shell redirect written
+    // as `> nul` (or a tool doing the same internally) does not discard the
+    // output - it creates a real directory called `nul` in the working tree.
+    // Git cannot even stat it ("could not open directory 'nul/'"), so
+    // .gitignore does not save you and `git status` will not warn you: it is
+    // invisible to every check except the packager, which happily shipped it.
+    // A security gate found exactly that - `nul/.last-run.json`, a Playwright
+    // run cache, inside the built .xpi. Inert, but it had no business in a
+    // package a user installs.
+    "nul",
+    "nul/**",
+    "con",
+    "con/**",
+    "prn",
+    "prn/**",
+    "aux",
+    "aux/**",
     ".gitignore",
     ".web-ext-ignore",
     "web-ext-config.cjs",
