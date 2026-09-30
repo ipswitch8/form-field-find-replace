@@ -33,6 +33,50 @@
 
 const STORAGE_KEY = "formFieldFindReplace";
 
+// ---- Remembered find/replace history -----------------------------------
+//
+// The full design decision, and the reasoning behind each value here, is in
+// README.md under "Remembered find/replace history". The short version, so a
+// reader of this file is not forced to go looking:
+//
+//   - History is ONE list of PAIRED entries. Each entry carries the find
+//     value, the replace value, all four option flags AND the entire
+//     fieldTypes map, captured together. It is deliberately not two
+//     independent find-only/replace-only lists: a remembered regex source
+//     recalled without its `regex` flag would silently be searched for
+//     literally and report no matches.
+//   - Its storage key is SEPARATE from STORAGE_KEY above. STORAGE_KEY holds
+//     only the last-typed state; this holds the remembered list. Two keys so
+//     the two can be read and cleared independently.
+//   - Bounded and newest-first. Index 0 is the most recent; re-recording an
+//     entry identical in every field moves it to the front instead of
+//     duplicating it; the tail is dropped past the bound. Deliberately stated
+//     that precisely rather than as "most-recently-used": a gate pointed out
+//     that with recording as the only promotion trigger, this is
+//     indistinguishable from FIFO-with-move-to-front-on-re-record, and calling
+//     it MRU claimed a distinction no test could see. Selection-driven
+//     promotion - which is what would make the ordering genuinely
+//     usage-based rather than record-based - arrives with the dropdown, NOT
+//     here. Do not read this comment as describing something that already
+//     happens on select; at this point in the file's history there is no
+//     select path at all.
+//     The bound is load-bearing, not decoration - a remembered value is
+//     arbitrary text the user may have copied off a page, so it can be long,
+//     and an unbounded list would grow with every run for the life of the
+//     profile.
+//   - Recorded ONLY from handleCount/handleReplaceAll, and only with a
+//     non-empty find. Recording on `input` would fill the list with prefixes
+//     of whatever the user was still typing and evict the entries they
+//     actually wanted within a few seconds.
+//
+// storage.local ONLY, never storage.sync - same as the rest of this
+// extension. test/history-dropdown.spec.js asserts that mechanically by
+// scanning this file's own source, because .claude-security.json's
+// dangerous_code_scan covers eval/innerHTML/Function( and would not catch a
+// sync-area call.
+const HISTORY_KEY = "formFieldFindReplaceHistory";
+const MAX_HISTORY_ENTRIES = 20;
+
 const DEFAULT_STATE = {
   find: "",
   replace: "",
@@ -256,6 +300,174 @@ async function restoreState() {
     console.warn("Form Field Find & Replace: failed to restore state", error);
     applyState(DEFAULT_STATE);
   }
+}
+
+// ---- Remembered history: load, record, persist -------------------------
+
+/**
+ * The in-memory copy of the remembered list, newest first. Loaded once during
+ * init() and then treated as authoritative for the lifetime of this popup
+ * document.
+ *
+ * Why a cache and not a read-modify-write against storage on every record:
+ * two records landing close together would each read the same pre-existing
+ * array and the second `set` would clobber the first's entry. Holding the
+ * list here and only ever writing the whole pruned array back makes that
+ * impossible. The popup document is the only writer while it is open.
+ */
+let historyEntries = [];
+
+/**
+ * Serialises history writes so two records in quick succession cannot
+ * interleave their storage.local.set calls out of order.
+ *
+ * This is load-bearing, not belt-and-braces. `set` resolves asynchronously,
+ * and each call carries the snapshot it was given at call time. Issue two
+ * unserialised writes and the SLOWER one lands last regardless of which was
+ * newer - so a slow one-entry write applied on top of a fast two-entry write
+ * silently loses the newer remembered search.
+ *
+ * Pinned by "a slow earlier history write cannot clobber a newer one" in
+ * test/history-dropdown.spec.js, which delays the first `set` by 600ms and
+ * asserts both the final contents AND the order the writes actually landed.
+ * A gate previously deleted this chain and found every test still green; that
+ * test exists so the same deletion now fails.
+ */
+let historyWriteChain = Promise.resolve();
+
+/**
+ * Coerce an arbitrary stored value into a well-formed history entry, or
+ * return null if it cannot be one.
+ *
+ * Everything that comes back out of storage.local is treated as untrusted
+ * shape - not untrusted *content* (it is the user's own text), but untrusted
+ * structure. A hand-edited or partially-written value must not be able to
+ * throw during rendering, so unknown keys are dropped and missing ones take
+ * their default. The result contains strings and booleans only: no functions,
+ * no DOM nodes, nothing that would fail structured-clone on the way back in.
+ * @param {any} raw
+ */
+function normalizeHistoryEntry(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  if (typeof raw.find !== "string" || raw.find === "") {
+    return null;
+  }
+
+  const rawOptions = raw.options && typeof raw.options === "object" ? raw.options : {};
+  const rawFieldTypes =
+    raw.fieldTypes && typeof raw.fieldTypes === "object" ? raw.fieldTypes : {};
+
+  const options = {};
+  for (const key of Object.keys(DEFAULT_STATE.options)) {
+    options[key] = Boolean(
+      Object.prototype.hasOwnProperty.call(rawOptions, key)
+        ? rawOptions[key]
+        : DEFAULT_STATE.options[key]
+    );
+  }
+
+  const fieldTypes = {};
+  for (const key of Object.keys(DEFAULT_STATE.fieldTypes)) {
+    fieldTypes[key] = Boolean(
+      Object.prototype.hasOwnProperty.call(rawFieldTypes, key)
+        ? rawFieldTypes[key]
+        : DEFAULT_STATE.fieldTypes[key]
+    );
+  }
+
+  return {
+    find: raw.find,
+    replace: typeof raw.replace === "string" ? raw.replace : "",
+    options,
+    fieldTypes,
+  };
+}
+
+/**
+ * True when two entries are identical in every remembered field. This is what
+ * makes re-running the same search a move-to-front rather than a duplicate -
+ * and, just as importantly, what makes the SAME find/replace strings with
+ * DIFFERENT options two distinct entries, since the options are the thing the
+ * user would otherwise have to remember themselves.
+ * @param {ReturnType<typeof normalizeHistoryEntry>} a
+ * @param {ReturnType<typeof normalizeHistoryEntry>} b
+ */
+function sameHistoryEntry(a, b) {
+  if (!a || !b) {
+    return false;
+  }
+  if (a.find !== b.find || a.replace !== b.replace) {
+    return false;
+  }
+  for (const key of Object.keys(DEFAULT_STATE.options)) {
+    if (Boolean(a.options[key]) !== Boolean(b.options[key])) {
+      return false;
+    }
+  }
+  for (const key of Object.keys(DEFAULT_STATE.fieldTypes)) {
+    if (Boolean(a.fieldTypes[key]) !== Boolean(b.fieldTypes[key])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Read the remembered list out of storage.local. Never throws: a missing key,
+ * a non-array value, or a storage failure all yield an empty list, because a
+ * broken history must not stop the popup from working.
+ * @returns {Promise<Array<ReturnType<typeof normalizeHistoryEntry>>>}
+ */
+async function loadHistory() {
+  try {
+    const result = await browser.storage.local.get(HISTORY_KEY);
+    const raw = result && result[HISTORY_KEY];
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    return raw
+      .map(normalizeHistoryEntry)
+      .filter(Boolean)
+      .slice(0, MAX_HISTORY_ENTRIES);
+  } catch (error) {
+    console.warn("Form Field Find & Replace: failed to load history", error);
+    return [];
+  }
+}
+
+/** Write the current in-memory list back to storage.local. */
+function persistHistory() {
+  const snapshot = historyEntries;
+  historyWriteChain = historyWriteChain
+    .then(() => browser.storage.local.set({ [HISTORY_KEY]: snapshot }))
+    .catch((error) => {
+      console.warn("Form Field Find & Replace: failed to persist history", error);
+    });
+  return historyWriteChain;
+}
+
+/**
+ * Record the current form state as the newest history entry.
+ *
+ * Called from handleCount and handleReplaceAll ONLY - that is the documented
+ * save trigger. An empty find is never recorded: there is nothing to
+ * remember, and an entry with an empty find could never be usefully recalled.
+ */
+function recordHistoryEntry() {
+  const fresh = normalizeHistoryEntry(collectState());
+  if (!fresh) {
+    return;
+  }
+
+  // Move-to-front semantics: drop any entry identical in every field, then
+  // put this one at the head. Filtering rather than searching-and-splicing
+  // keeps this correct even if a duplicate somehow appeared twice.
+  const rest = historyEntries.filter((existing) => !sameHistoryEntry(existing, fresh));
+  historyEntries = [fresh, ...rest].slice(0, MAX_HISTORY_ENTRIES);
+
+  persistHistory();
 }
 
 // ---- Status / progress helpers -----------------------------------------
@@ -499,6 +711,12 @@ function setAllFieldTypes(checked) {
 // ---- Actions -------------------------------------------------------------
 
 async function handleCount() {
+  // One of the two documented save triggers. Recorded here, from the state as
+  // it is at the moment the user invoked the action - not later from the
+  // response, which could arrive after they have started editing the boxes
+  // again.
+  recordHistoryEntry();
+
   setStatus("Counting matches...");
   const response = await sendToContentScript("count");
   if (!response) {
@@ -531,6 +749,12 @@ async function handleReplaceAll() {
   // A lightweight "count" message reports `totalFields` - the full
   // collected+filtered field count regardless of match - independent of
   // the "Count matches" button's own status text below.
+  // The other documented save trigger. Recorded before the preflight so the
+  // entry exists even if the preflight or the run itself fails - the user
+  // still invoked this search, and losing it because the page could not be
+  // reached would be the opposite of helpful.
+  recordHistoryEntry();
+
   setUndoWarning(null);
   const preflight = await sendToContentScript("count");
   if (
@@ -718,12 +942,48 @@ function wireEvents() {
 // ---- Init ------------------------------------------------------------------
 
 async function init() {
-  await restoreState();
+  // Both reads happen BEFORE wireEvents, so no handler can run against an
+  // empty historyEntries and write a truncated list back over a real one.
+  // They are independent reads of different keys, so they run concurrently
+  // rather than one after the other.
+  //
+  // Reversing this order is a real data-loss bug, not a tidiness issue: a
+  // click landing before the load resolved would record against an empty
+  // cache and persist a ONE-entry array over however many were really stored.
+  // That is the same shape as the restoreState()-overwrites-typed-input defect
+  // this project already shipped once. Pinned by "an action fired before
+  // init() finishes cannot truncate the stored history" in
+  // test/history-dropdown.spec.js, which holds storage open for 800ms, clicks
+  // inside the gap, and asserts all five seeded entries survive.
+  const [, loadedHistory] = await Promise.all([restoreState(), loadHistory()]);
+  historyEntries = loadedHistory;
+
   wireEvents();
   registerProgressListener();
   updateButtonStates();
   setProgress(0, 0);
   updatePreview();
+
+  // Automation-friendly readiness marker. Every control in popup.html exists
+  // in the static markup and is enabled from first paint, so "the button is
+  // there and not disabled" does NOT mean init() has finished wiring it. A
+  // click landing in that gap reaches no handler at all: nothing is sent to
+  // the content script and no status is written, which in a test reads as an
+  // inexplicable no-op rather than as a race. This attribute is set only after
+  // every listener is attached and the remembered list has been loaded, so a
+  // test can wait on something that is actually true rather than on a proxy
+  // for it.
+  //
+  // That gap is not hypothetical and not merely asserted here - a test pins
+  // it: "no action handler is attached until the readiness marker is set" in
+  // test/history-dropdown.spec.js holds storage open, checks the button is
+  // present and enabled while the marker is still absent, clicks it, and
+  // asserts zero messages were sent.
+  //
+  // Set before the content-script injection below, deliberately: injection
+  // depends on a scriptable tab and may legitimately fail, but the popup UI
+  // is fully functional either way.
+  document.body.dataset.ffrReady = "true";
 
   // Ensure the content script is present in the active tab as soon as the
   // popup opens, using the activeTab grant from the click that opened it.

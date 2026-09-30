@@ -86,8 +86,24 @@ function entry(over = {}) {
  * Mount popup.html against a fake `browser` whose storage.local really
  * stores. Returns nothing; use readStorage()/readHistory() to inspect.
  *
+ * `getDelayMs` delays every storage.local.get resolution, which widens the
+ * window between page load and init() finishing - that is how the
+ * read-before-wireEvents ordering and the readiness marker get tested as
+ * mechanisms rather than asserted as intentions.
+ *
+ * `setDelaysMs` delays individual storage.local.set calls, in order: the first
+ * set waits setDelaysMs[0], the second setDelaysMs[1], and so on. A LONG first
+ * delay followed by a short second is what makes an unserialised writer
+ * observably wrong - the slow first write lands last and clobbers the newer
+ * value.
+ *
+ * `waitForReady: false` skips the readiness wait entirely, for the tests that
+ * are specifically about what happens BEFORE init() finishes.
+ *
  * @param {import('@playwright/test').Page} page
- * @param {{history?: any[], state?: object, replaced?: number}} [opts]
+ * @param {{history?: any[], state?: object, replaced?: number,
+ *          getDelayMs?: number, setDelaysMs?: number[],
+ *          waitForReady?: boolean}} [opts]
  */
 async function mountPopup(page, opts = {}) {
   const seed = {};
@@ -99,7 +115,7 @@ async function mountPopup(page, opts = {}) {
   }
 
   await page.addInitScript(
-    ({ seed, replaced }) => {
+    ({ seed, replaced, getDelayMs, setDelaysMs }) => {
       // A real in-memory store. A stub returning {} would make every
       // persistence assertion below vacuous.
       const store = JSON.parse(JSON.stringify(seed));
@@ -107,6 +123,22 @@ async function mountPopup(page, opts = {}) {
       window.__store = store;
       // @ts-ignore
       window.__sent = [];
+      // @ts-ignore - order in which set() calls actually LANDED, as opposed to
+      // the order they were issued. The difference is the whole point of the
+      // write-serialisation test.
+      window.__setLanded = [];
+
+      // Delays are matched against HISTORY writes only, in order. Keying them
+      // to the history key rather than to "the Nth set call" matters: typing
+      // into the form fires persistState, so the raw call sequence is mostly
+      // last-typed-state writes and a positional delay would land on one of
+      // those instead of on the write under test.
+      const delays = Array.isArray(setDelaysMs) ? setDelaysMs.slice() : [];
+      let historySetCount = 0;
+
+      /** Resolve after ms, or immediately when ms is falsy. */
+      const after = (ms) =>
+        ms ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
       // @ts-ignore
       window.browser = {
@@ -125,15 +157,35 @@ async function mountPopup(page, opts = {}) {
                   out[k] = JSON.parse(JSON.stringify(store[k]));
                 }
               }
-              return Promise.resolve(out);
+              return after(getDelayMs).then(() => out);
             },
             set: (items) => {
-              for (const [k, v] of Object.entries(items)) {
-                store[k] = JSON.parse(JSON.stringify(v));
+              // Snapshot the payload at CALL time, apply it at RESOLVE time.
+              // A real storage backend behaves this way, and it is what lets a
+              // slow earlier write overwrite a fast later one when the caller
+              // does not serialise them.
+              const snapshot = JSON.parse(JSON.stringify(items));
+              let ms = 0;
+              if (
+                Object.prototype.hasOwnProperty.call(
+                  snapshot,
+                  "formFieldFindReplaceHistory"
+                )
+              ) {
+                ms = delays[historySetCount] || 0;
+                historySetCount += 1;
               }
-              // @ts-ignore - keep the inspectable copy in sync.
-              window.__store = store;
-              return Promise.resolve();
+              return after(ms).then(() => {
+                for (const [k, v] of Object.entries(snapshot)) {
+                  store[k] = v;
+                  // @ts-ignore
+                  window.__setLanded.push(
+                    k + ":" + (Array.isArray(v) ? v.length : "obj")
+                  );
+                }
+                // @ts-ignore - keep the inspectable copy in sync.
+                window.__store = store;
+              });
             },
           },
         },
@@ -179,16 +231,30 @@ async function mountPopup(page, opts = {}) {
         runtime: { onMessage: { addListener: () => {} } },
       };
     },
-    { seed, replaced: opts.replaced ?? 3 }
+    {
+      seed,
+      replaced: opts.replaced ?? 3,
+      getDelayMs: opts.getDelayMs ?? 0,
+      setDelaysMs: opts.setDelaysMs ?? [],
+    }
   );
 
   await page.goto("file://" + POPUP_PATH.replace(/\\/g, "/"));
-  // init() is async (it awaits restoreState) - wait for it to have settled so
-  // tests never race the restore, which is the shape of a prior bug on this
-  // project (restoreState overwriting typed input).
-  await page.waitForFunction(() => document.getElementById("undo-btn") !== null);
+  if (opts.waitForReady === false) {
+    return;
+  }
+  // init() is async (it awaits restoreState AND loadHistory) - wait for it to
+  // have settled so tests never race the restore, which is the shape of a
+  // prior bug on this project (restoreState overwriting typed input).
+  //
+  // Waiting on an element existing would NOT be enough: every control is in
+  // the static markup and enabled from the start, so a click could land
+  // before wireEvents() attaches its handler - on #replace-all-btn that means
+  // the form's default submit fires instead, which looks like a flake rather
+  // than a race. popup.js sets body[data-ffr-ready] only after every listener
+  // is attached and the remembered list is loaded.
   await page.waitForFunction(
-    () => document.getElementById("count-btn")?.disabled === false
+    () => document.body.dataset.ffrReady === "true"
   );
 }
 
@@ -307,6 +373,61 @@ test.describe("history persistence", () => {
     expect(history === null || history.length === 0).toBe(true);
   });
 
+  test("history is persisted through storage.local only, never storage.sync", async ({
+    page,
+  }) => {
+    // The claim "storage.local only, never storage.sync" was previously
+    // backed by nothing but the incidental fact that this file's mock defines
+    // no sync area - so a storage.sync call would have thrown in tests while
+    // working fine in a real browser, quietly syncing the user's remembered
+    // text off the device. .claude-security.json's dangerous_code_scan covers
+    // eval/innerHTML/Function( and would not catch it either. This scans the
+    // shipped source directly.
+    const fs = require("fs");
+    const source = fs.readFileSync(
+      path.join(__dirname, "..", "popup", "popup.js"),
+      "utf8"
+    );
+    // Strip comments first, so prose that merely NAMES storage.sync in order
+    // to say it is not used does not read as a violation - the same
+    // distinction .claude-security.json draws for eval/innerHTML.
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+    expect(code).not.toMatch(/storage\s*\.\s*sync/);
+    expect(code).toMatch(/storage\s*\.\s*local/);
+
+    // And prove at runtime that a sync area is never touched, by providing one
+    // that fails loudly if it ever is.
+    await page.addInitScript(() => {
+      // @ts-ignore
+      window.__syncTouched = [];
+    });
+    await mountPopup(page);
+    await page.evaluate(() => {
+      // @ts-ignore
+      window.browser.storage.sync = {
+        get: () => {
+          // @ts-ignore
+          window.__syncTouched.push("get");
+          return Promise.resolve({});
+        },
+        set: () => {
+          // @ts-ignore
+          window.__syncTouched.push("set");
+          return Promise.resolve();
+        },
+      };
+    });
+
+    await fillForm(page, { find: "alpha", replace: "beta" });
+    await page.locator("#count-btn").click();
+    await expect(page.locator("#status-line")).toContainText(/matches/i);
+
+    // @ts-ignore
+    expect(await page.evaluate(() => window.__syncTouched)).toEqual([]);
+  });
+
   test("an empty find value is never recorded", async ({ page }) => {
     await mountPopup(page);
     await page.locator("#replace-input").fill("something");
@@ -394,6 +515,193 @@ test.describe("history bound", () => {
     const history = await readHistory(page);
     expect(history.length).toBe(2);
     expect(history[0].options.regex).toBe(true);
+  });
+});
+
+// =========================================================================
+// The three mechanisms popup.js CLAIMS in prose
+//
+// A gate flip-tested each of these by deleting the mechanism and re-running:
+// every test still passed. A claim nothing would catch is a comment, not a
+// guarantee - and this project has already shipped three defects whose only
+// warning sign was a comment asserting a data flow the code contradicted.
+// Each test below was checked to go RED when its mechanism is removed.
+// =========================================================================
+
+test.describe("claimed mechanisms, actually pinned", () => {
+  test("a slow earlier history write cannot clobber a newer one (historyWriteChain)", async ({
+    page,
+  }) => {
+    // popup.js serialises history writes through `historyWriteChain`. Without
+    // it, both storage.local.set calls are issued immediately; if the FIRST
+    // one resolves last - which is what a long first delay simulates - it
+    // applies its older, one-entry snapshot ON TOP of the newer two-entry one,
+    // and the second remembered search is silently lost.
+    //
+    // The first HISTORY write waits 4s; later ones are immediate. 4s is
+    // chosen to comfortably exceed the time between the two clicks below -
+    // an earlier version of this test used 600ms, which the second click
+    // sometimes beat, and the test then passed even with serialisation
+    // removed. A mechanism test that can pass without its mechanism is worse
+    // than no test.
+    await mountPopup(page, { setDelaysMs: [4000, 0, 0, 0] });
+
+    await fillForm(page, { find: "first-search", replace: "a" });
+    await page.locator("#count-btn").click();
+    await expect(page.locator("#status-line")).toContainText(/matches/i);
+
+    await fillForm(page, { find: "second-search", replace: "b" });
+    await page.locator("#count-btn").click();
+    await expect(page.locator("#status-line")).toContainText(/matches/i);
+
+    // Wait until both writes have landed, however long the slow one took.
+    await page.waitForFunction(
+      () => window.__setLanded.filter((e) => e.startsWith("formFieldFindReplaceHistory")).length >= 2,
+      undefined,
+      { timeout: 20000 }
+    );
+
+    const history = await readHistory(page);
+    // Serialised: the last write to land is the two-entry one.
+    expect(history.map((e) => e.find)).toEqual(["second-search", "first-search"]);
+
+    // And the landing order proves the chain actually deferred the second
+    // write rather than the two racing and happening to come out right.
+    const landed = await page.evaluate(() =>
+      window.__setLanded.filter((e) => e.startsWith("formFieldFindReplaceHistory"))
+    );
+    expect(landed).toEqual([
+      "formFieldFindReplaceHistory:1",
+      "formFieldFindReplaceHistory:2",
+    ]);
+  });
+
+  test("an action fired before init() finishes cannot truncate the stored history", async ({
+    page,
+  }) => {
+    // popup.js loads the remembered list BEFORE wireEvents(). If that order
+    // were reversed, a click landing in the gap would run handleCount against
+    // an empty `historyEntries` and persist a ONE-entry array over the five
+    // that were really there - the same shape as the restoreState()-overwrites
+    // -typed-input bug this project already shipped once.
+    const seeded = Array.from({ length: 5 }, (_, i) =>
+      entry({ find: `seeded-${i}`, replace: `r-${i}` })
+    );
+    // 800ms of storage latency, and do NOT wait for readiness - we want to be
+    // inside the gap.
+    await mountPopup(page, {
+      history: seeded,
+      getDelayMs: 800,
+      waitForReady: false,
+    });
+
+    // Put a non-empty find in the box and invoke an action, all while init()
+    // is still awaiting storage. Typing directly is load-bearing: under the
+    // reversed ordering, restoreState() has not run yet either, so the box
+    // would be empty and recordHistoryEntry would decline on the empty-find
+    // rule - the test would then pass for the wrong reason and prove nothing.
+    // An earlier version of this test did exactly that, and stayed green with
+    // the ordering reversed.
+    await page.locator("#find-input").fill("typed-in-the-gap");
+    await page.locator("#count-btn").click({ force: true });
+
+    // Now let init() finish.
+    await page.waitForFunction(() => document.body.dataset.ffrReady === "true", undefined, {
+      timeout: 10000,
+    });
+    // ...and give any write it triggered time to land.
+    await page.waitForTimeout(300);
+
+    const history = await readHistory(page);
+    // The five seeded entries must still be there. Under the reversed
+    // ordering this array is length 1.
+    expect(history.length).toBeGreaterThanOrEqual(5);
+    expect(history.map((e) => e.find)).toContain("seeded-4");
+  });
+
+  test("no action handler is attached until the readiness marker is set (why the marker exists)", async ({
+    page,
+  }) => {
+    // The mount helper waits on body[data-ffr-ready]. This proves that wait is
+    // NECESSARY rather than decorative: before the marker appears, the buttons
+    // are present and enabled in the static markup but their handlers are not
+    // attached yet, so a click does nothing an assertion can see. A test that
+    // waited on "the button exists" would be waiting on something that was
+    // already true at first paint.
+    await mountPopup(page, { getDelayMs: 900, waitForReady: false });
+
+    // Preconditions: the control is there and not disabled, i.e. exactly the
+    // thing a naive wait would have keyed on.
+    const ready = await page.evaluate(() => ({
+      exists: document.getElementById("count-btn") !== null,
+      disabled: document.getElementById("count-btn").disabled,
+      marker: document.body.dataset.ffrReady,
+    }));
+    expect(ready.exists).toBe(true);
+    expect(ready.disabled).toBe(false);
+    expect(ready.marker).toBeUndefined();
+
+    await page.locator("#count-btn").click({ force: true });
+    // No handler yet, so nothing was sent to the content script and no status
+    // was written.
+    const sentBefore = await page.evaluate(() => window.__sent.length);
+    expect(sentBefore).toBe(0);
+    expect((await page.locator("#status-line").textContent()) || "").toBe("");
+
+    // After the marker, the same click works.
+    await page.waitForFunction(() => document.body.dataset.ffrReady === "true", undefined, {
+      timeout: 10000,
+    });
+    await fillForm(page, { find: "now", replace: "then" });
+    await page.locator("#count-btn").click();
+    await expect(page.locator("#status-line")).toContainText(/matches/i);
+  });
+
+  test("malformed stored history is coerced, not thrown on (normalizeHistoryEntry)", async ({
+    page,
+  }) => {
+    // Everything read back out of storage.local is treated as untrusted in
+    // SHAPE. A hand-edited or partially-written value must not be able to stop
+    // the popup from starting, and must not survive into the in-memory list in
+    // a shape the renderer would choke on.
+    await mountPopup(page, {
+      history: [
+        null,
+        "not an object",
+        42,
+        {},
+        { find: "" },
+        { find: "valid-one", replace: 7, options: "nope", fieldTypes: null },
+        { find: "valid-two", replace: "ok", options: { regex: "truthy" }, fieldTypes: { bogusKey: true } },
+      ],
+    });
+
+    // The popup started at all - that is half the claim.
+    await expect(page.locator("#count-btn")).toBeEnabled();
+
+    // Force a write so we can inspect the normalized list that survived.
+    await fillForm(page, { find: "fresh", replace: "x" });
+    await page.locator("#count-btn").click();
+    await expect(page.locator("#status-line")).toContainText(/matches/i);
+
+    const history = await readHistory(page);
+    const finds = history.map((e) => e.find);
+    // Junk dropped, valid entries kept.
+    expect(finds).toEqual(["fresh", "valid-one", "valid-two"]);
+
+    const one = history.find((e) => e.find === "valid-one");
+    // A non-string replace becomes "", a non-object options/fieldTypes falls
+    // back to defaults - inert primitives throughout.
+    expect(one.replace).toBe("");
+    expect(typeof one.options.regex).toBe("boolean");
+    expect(one.options.regex).toBe(false);
+    expect(one.fieldTypes.text).toBe(true);
+
+    const two = history.find((e) => e.find === "valid-two");
+    // A truthy non-boolean is coerced, and an unknown field-type key is
+    // dropped rather than carried into storage.
+    expect(two.options.regex).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(two.fieldTypes, "bogusKey")).toBe(false);
   });
 });
 

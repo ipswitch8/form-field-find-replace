@@ -298,7 +298,19 @@ focusing) either box opens a dropdown of previous entries; picking one refills
 
 This section is the design decision, written down before the code was built,
 because several of its choices are load-bearing and would otherwise look
-arbitrary to the next reader.
+arbitrary to the next reader. It is therefore written in the present tense
+throughout, describing the finished feature.
+
+> **Implementation status — delete this note once it is no longer true.**
+> As of this commit the persistence layer is in place: entries are recorded,
+> bounded and restored from `storage.local`. The **dropdown itself is not built
+> yet**, so anything below describing clicking, keyboard navigation, selecting
+> an entry, or selection promoting an entry to the front is design intent, not
+> current behaviour. `popup/popup.js` says the same thing at the point where it
+> would matter. This note exists because a gate caught this section describing
+> selection promotion in the present tense while no select path existed — on
+> this project, prose that outlives the code it describes has already caused
+> three defects.
 
 ### One shared list of paired entries, not two independent lists
 
@@ -328,8 +340,15 @@ each row shows first.
 | Storage area | `browser.storage.local` — never `storage.sync`, same as the rest of the extension |
 | Key | `formFieldFindReplaceHistory` |
 | Maximum entries | **20** |
-| Eviction | Most-recently-used. Newest entry at index 0; re-saving an entry whose find, replace, options and fieldTypes are all identical to an existing one *moves that entry to the front* rather than adding a duplicate. When the list would exceed 20, the entry at the tail (least recently used) is dropped. |
+| Eviction | Newest-first. Index 0 is the most recent. Re-saving an entry whose find, replace, options and fieldTypes are all identical to an existing one *moves that entry to the front* rather than adding a duplicate. When the list would exceed 20, the tail entry is dropped. |
 | Save trigger | Only when **Count matches** or **Replace all** is invoked with a non-empty Find value. |
+
+Stated as "newest-first" rather than "most-recently-used" on purpose. With
+re-recording as the only promotion trigger, MRU and plain FIFO-with-dedup are
+indistinguishable — a gate rightly objected to the stronger word claiming a
+distinction no test could observe. Selection-driven promotion is what makes the
+ordering genuinely usage-based, and it is the dropdown's job; until the dropdown
+exists there is no select path to promote from.
 
 The key is deliberately **separate** from the existing
 `formFieldFindReplace` state key, which holds only the last-typed values. Two
