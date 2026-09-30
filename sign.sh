@@ -73,10 +73,36 @@ echo
 
 # web-ext sign builds, uploads, waits for validation, and downloads the signed
 # .xpi into web-ext-artifacts/ on success.
+#
+# LISTED submissions additionally need listing metadata. Without it AMO rejects
+# the upload outright:
+#
+#   WebExtError: Submission failed (2): Bad Request
+#   {"version": {"license": ["This field, or custom_license, is required
+#    for listed versions."]}}
+#
+# docs/amo/amo-metadata.json carries the licence plus the rest of the listing
+# (summary, description, categories, support contact, privacy policy) so the
+# submission arrives complete rather than landing in AMO's "incomplete" state
+# to be finished by hand. It is not sent on the unlisted channel, where AMO
+# neither needs nor uses it.
+METADATA_ARGS=()
+if [ "$CHANNEL" = "listed" ]; then
+  METADATA_FILE="docs/amo/amo-metadata.json"
+  if [ ! -f "$METADATA_FILE" ]; then
+    echo "sign.sh: ${METADATA_FILE} is missing; a listed submission needs it." >&2
+    exit 2
+  fi
+  METADATA_ARGS=(--amo-metadata="$METADATA_FILE")
+  echo "Listing metadata: ${METADATA_FILE}"
+  echo
+fi
+
 npx --yes web-ext sign \
   --channel="$CHANNEL" \
   --api-key="$WEB_EXT_API_KEY" \
-  --api-secret="$WEB_EXT_API_SECRET"
+  --api-secret="$WEB_EXT_API_SECRET" \
+  "${METADATA_ARGS[@]}"
 
 echo
 echo "Signed artifacts:"

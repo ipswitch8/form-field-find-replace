@@ -1,9 +1,32 @@
 # AMO listing copy — Form Field Find & Replace
 
-Everything addons.mozilla.org asks for on the **listed** channel, ready to
-paste. Nothing here has been submitted.
-
 **Contact for all AMO fields: `inquiries@itwerx.net`**
+
+## Status: submitted, awaiting review
+
+Version **0.6.0** was submitted to the **listed** channel on 30 September 2026
+and is in Mozilla's review queue.
+
+| | |
+|---|---|
+| Add-on id | `inquiries@itwerx.net` |
+| Slug | `form-field-find-replace` |
+| Version record | https://addons.mozilla.org/en-US/developers/addon/form-field-find-replace/versions/6529414 |
+| Public page (live once approved) | https://addons.mozilla.org/en-US/firefox/addon/form-field-find-replace/ |
+
+Most of this listing was submitted through the API, from
+`docs/amo/amo-metadata.json`, rather than typed into the web UI — summary,
+description, category, support contact and privacy policy all went up with the
+package. The copy below is the source of truth for that file.
+
+**Still to do by hand in the Developer Hub**, because the API does not carry
+them: upload the **icon** and the **screenshots** from `docs/amo/assets/`. See
+the Assets section for which file goes where and the suggested captions.
+
+`npm run sign -- listed` will report an "Approval: timeout exceeded" error at
+the end. That is not a failure — it is web-ext giving up on *waiting* for a
+human reviewer, long after the upload itself succeeded. The version URL it
+prints is the proof the submission landed.
 
 ---
 
@@ -23,11 +46,26 @@ Find and replace text across every editable form field on a page - plain text, w
 
 ## Categories
 
-- **Primary:** Productivity
-- **Secondary:** Other
+```
+search-tools
+```
 
-Not "Privacy & Security" — it makes no security claim and putting it there
-invites the wrong expectations.
+**There is no "Productivity" category for Firefox extensions.** An earlier draft
+of this file said Productivity/Other from memory; the real list was then read
+from `https://addons.mozilla.org/api/v5/addons/categories/` and contains exactly
+fifteen extension slugs:
+
+```
+alerts-updates  appearance  bookmarks  download-management
+feeds-news-blogging  games-entertainment  language-support  other
+photos-music-videos  privacy-security  search-tools  shopping
+social-communication  tabs  web-development
+```
+
+`search-tools` is the honest fit — this is a search-and-replace tool. Not
+`privacy-security`: it makes no security claim, and filing it there invites
+expectations it does not meet. Not `web-development` either: developers are a
+likely audience but the tool is not about building sites.
 
 ## Tags
 
