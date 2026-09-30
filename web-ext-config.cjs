@@ -33,6 +33,21 @@ module.exports = {
     ".claude-security.json",
     "CLAUDE.md",
     "README.md",
+    // AMO listing groundwork: copy, privacy policy and the generated PNG
+    // icons/screenshots, plus the generator itself. None of it is extension
+    // code and none of it belongs in a package a user installs. Keeping it out
+    // also keeps check-xpi.py's EXPECTED_FILES allowlist at the seven real
+    // files, which is what makes that check worth having.
+    "docs",
+    "docs/**",
+    "tools",
+    "tools/**",
+    // The licence is deliberately NOT shipped inside the .xpi. Adding it would
+    // make the package eight files while the already-signed 0.5.0 has seven,
+    // so every contents check would disagree with the released artifact. If it
+    // should ship, add it at a version bump and update EXPECTED_FILES in the
+    // same commit.
+    "LICENSE",
     ".claude/**",
     ".claude-flow/**",
     ".git/**",

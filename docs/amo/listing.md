@@ -1,0 +1,204 @@
+# AMO listing copy — Form Field Find & Replace
+
+Everything addons.mozilla.org asks for on the **listed** channel, ready to
+paste. Nothing here has been submitted.
+
+**Contact for all AMO fields: `inquiries@itwerx.net`**
+
+---
+
+## Add-on name
+
+```
+Form Field Find & Replace
+```
+
+## Summary
+
+AMO caps this at 250 characters. This is 238.
+
+```
+Find and replace text across every editable form field on a page - plain text, whole word, or regular expressions with backreferences. Preview before you replace, undo after, and it remembers your previous searches along with the settings they used.
+```
+
+## Categories
+
+- **Primary:** Productivity
+- **Secondary:** Other
+
+Not "Privacy & Security" — it makes no security claim and putting it there
+invites the wrong expectations.
+
+## Tags
+
+```
+find, replace, forms, regex, search-and-replace, productivity, text-editing
+```
+
+## Support email
+
+```
+inquiries@itwerx.net
+```
+
+## Support site / homepage
+
+```
+https://github.com/ipswitch8/form-field-find-replace
+```
+
+> **Decide before submitting.** That repository is currently **private**, so a
+> listed add-on would point its support link at a 404 for everyone who clicks
+> it. Either make the repo public, or point these fields at a page that exists.
+> The support *email* above is fine either way.
+
+## License
+
+MIT — see `LICENSE` in the repository root. Select "MIT License" in AMO's
+licence dropdown rather than pasting custom text.
+
+---
+
+## Description
+
+AMO accepts limited HTML here. Plain paragraphs and lists render fine.
+
+```
+Find and replace text across the editable form fields of whatever page you are looking at.
+
+It works on text inputs, textareas, and rich-text (contenteditable) editors, and it can reach inside same-origin iframes and open shadow DOM. Plain text, whole-word, and full regular expressions with backreferences ($1, $2, $&, named groups) are all supported.
+
+WHAT IT DOES
+
+• Preview before you commit. A live preview shows exactly what your pattern would produce, including backreference substitution, before a single field is touched. Count matches tells you how many fields would change.
+
+• Undo. One level, applied through the same path a real edit would take, so frameworks notice. If a run would exceed the undo limit you are warned BEFORE it starts, not after.
+
+• Remembers your searches - with their settings. Click the Find or Replace box and pick from your previous searches. Each remembered entry restores the find text, the replace text, all four option checkboxes and the field-type selection together. That matters: a remembered pattern recalled without its "regular expression" flag would be searched for literally and quietly report no matches.
+
+• Choose what it touches. Thirteen field-type checkboxes let you restrict a run to, say, only textareas, or only date fields.
+
+WHAT IT WILL NOT TOUCH
+
+Password, hidden and file fields are never read or written - they are excluded before matching even runs, not filtered afterwards. Neither are disabled, readonly or aria-readonly fields: those are the page telling you the value is not meant to be edited.
+
+Number, date and time fields are checked after writing and rolled back to their original value if the result would be invalid, rather than being left blank. Those are reported as skipped so you know the run was not fully applied.
+
+NOTHING LEAVES YOUR BROWSER
+
+No network requests of any kind. No telemetry, no analytics, no crash reporting. Your searches are remembered in local browser storage only, never synced, and a Clear history button removes them.
+
+PERMISSIONS
+
+It asks for exactly three: activeTab, scripting, and storage.
+
+There is deliberately no host permission. The extension has no access to any page until you click its toolbar button on that tab, and that access does not persist across navigation. It is not running in the background on every site you visit, because it cannot be.
+
+KNOWN LIMITATIONS
+
+A deliberately pathological regular expression can still freeze the tab; there is a per-field time budget, but JavaScript cannot interrupt a regex already running. Closed shadow roots and cross-origin iframes are unreachable by design. Editors that do not use real form fields - canvas-based ones, or CodeMirror-style editors that keep their state elsewhere - are not supported.
+```
+
+---
+
+## Version notes for 0.5.0
+
+Paste into the version's release-notes field.
+
+```
+Remembers your previous searches, with the settings they used.
+
+• Click the Find or Replace box for a dropdown of previous searches. Picking one refills both boxes and restores all four option checkboxes plus the field-type selection - so a remembered regular expression comes back with regex still switched on, rather than being searched for literally.
+• Up to 20 entries, newest first. Saved when you press Count matches or Replace all, never on keystrokes. Clear history empties the list without disturbing what you are typing.
+• Fully keyboard operable: arrows to open and move, Enter to select, Escape to dismiss the list without closing the popup.
+• The popup no longer scrolls. It was 1032px tall against Firefox's 600px popup cap; it is now 481px, in a two-column layout.
+
+Also fixes two interaction bugs: an option checkbox could be focused without being ticked while a dropdown was open, and controls could shift under the cursor a fifth of a second after you stopped typing.
+```
+
+---
+
+## Notes for the reviewer
+
+AMO gives you a private field for this. It is worth filling in — this add-on
+requests `scripting` and rewrites form values, which is the profile that draws
+a closer look.
+
+```
+Source is plain, unminified, unbundled vanilla JavaScript with no build step. What is in the package is exactly what is in the repository - there is no compilation stage and no third-party runtime dependency.
+
+On permissions: there is no host permission by design. Injection is performed by the popup via scripting.executeScript at the moment the user clicks the toolbar button, using the activeTab grant that click creates. The manifest has no content_scripts entry and no matches pattern, so the extension is not present on any page until explicitly invoked, and the grant does not survive navigation.
+
+On data: data_collection_permissions is declared as {"required": ["none"]}, which is accurate. There are no network calls anywhere in the extension - no fetch, XMLHttpRequest, sendBeacon, WebSocket or EventSource. Persistence is storage.local only; storage.sync is never used, and the test suite asserts that both by scanning the shipped source and by installing a spy that fails if the sync area is ever touched.
+
+On DOM safety: no eval, no new Function, and no innerHTML anywhere in popup/ or content/. History dropdown rows are built with createElement and textContent, and a test feeds an <img onerror=...> string in as a remembered value and asserts no element is created from it.
+
+Fields that are password, hidden, file, disabled, readonly or aria-readonly are excluded at collection time, before any matching runs.
+
+The repository contains CLAUDE.md, which documents the full threat model and the rationale for each permission, and security-audit.sh, which mechanically enforces the permission allowlist and scans for dangerous constructs.
+```
+
+---
+
+## Assets
+
+Generated by `node tools/make-amo-assets.js` into `docs/amo/assets/`.
+They are excluded from the packaged `.xpi` by `web-ext-config.cjs`.
+
+### Icon
+
+| File | Size | Use |
+|---|---|---|
+| `icon-128.png` | 128×128 | **Upload this one.** AMO's preferred add-on icon size. |
+| `icon-64.png` | 64×64 | AMO's stated minimum, if 128 is rejected for any reason. |
+| `icon-16/32/48/96.png` | — | Generated for completeness; not needed by AMO. |
+
+Transparent background, so AMO can composite on a light or dark card.
+
+### Screenshots
+
+Upload in this order — AMO shows the first one as the primary image.
+
+| File | Shows |
+|---|---|
+| `screenshot-1-popup.png` | A regex with backreferences reformatting a phone number, with the live preview showing the result |
+| `screenshot-2-history.png` | The remembered-searches dropdown, with each entry's settings visible on its row |
+| `screenshot-3-preview.png` | A plain-text replacement previewed before anything is touched |
+
+Suggested captions:
+
+1. `Preview exactly what a pattern will do - including backreferences - before touching a single field.`
+2. `Previous searches come back with the settings they used, not just the text.`
+3. `Plain text, whole word, or regular expressions. Count first, undo after.`
+
+---
+
+## Before you submit — the checklist
+
+- [ ] Decide the **repository visibility** question above. A listed add-on
+      pointing at a private repo is a broken support link.
+- [ ] Confirm the **MIT licence** and the copyright line in `LICENSE`
+      (currently "Michael Hasse (itwerx.net)").
+- [ ] Decide on the **add-on id**. It is `mhasse@itwerx.net` and is already
+      signed and published on the unlisted channel under that id. See the
+      warning below.
+- [ ] Run `npm run sign -- listed` (the script already accepts the channel
+      argument and validates it).
+
+### The add-on id is not a contact field
+
+`browser_specific_settings.gecko.id` is `mhasse@itwerx.net`. It looks like an
+email address because that is the conventional format, but it is an
+**identifier**, not a contact — Mozilla never mails it, and users do not write
+to it.
+
+Changing it to `inquiries@itwerx.net` would create a **different add-on** as
+far as Firefox and AMO are concerned: the already-signed and installed v0.5.0
+would not upgrade to it, and anyone running it would have to remove and
+reinstall. The id was therefore left alone, and `inquiries@itwerx.net` is used
+for every field that is genuinely a contact — support email, listing copy and
+reviewer correspondence.
+
+If you do want the public identifier changed, that is a deliberate break rather
+than a rename, and it is best done at a version bump with a note telling
+existing users to reinstall.

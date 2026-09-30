@@ -17,6 +17,19 @@ ordinary release Firefox with signature enforcement left on.
 
 Build artifacts are gitignored, so no package lives in the source tree.
 
+It is signed on the **unlisted** channel, which means self-distribution: it is
+not listed in the public add-on directory and is not found by searching
+addons.mozilla.org. `docs/amo/` holds the groundwork for a listed submission —
+copy, privacy policy, and generated icons and screenshots — if that ever
+becomes wanted. Nothing there has been submitted.
+
+Questions: **inquiries@itwerx.net**
+
+## Licence
+
+MIT — see `LICENSE`. It is deliberately not shipped inside the `.xpi`; see the
+comment in `web-ext-config.cjs` for why.
+
 ## Installing
 
 ### Permanent — any Firefox, including release (recommended)
