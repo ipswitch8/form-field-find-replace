@@ -1380,18 +1380,130 @@ test.describe("dropdown interaction safety", () => {
       ],
     });
 
+    // THE FIND dropdown, deliberately - not the Replace one.
+    //
+    // A gate caught an earlier version of this test using the Replace dropdown,
+    // which in the two-column layout sits top-right while the Options group
+    // sits bottom-LEFT. That overlay can never reach those checkboxes at any
+    // entry count, so they are never descendants of it and never under it - and
+    // a regression back to the overlay-wide `mousedown` guard would have passed
+    // that test happily. It substituted a geometrically trivial case for the
+    // hard one.
+    //
+    // The Find dropdown shares a column with Options, so it partially covers
+    // the group: some checkboxes are under it, some are not. The ones that are
+    // NOT are exactly what the original defect broke, and they must still toggle
+    // WHILE the dropdown is open - not after dismissing it, which would prove
+    // nothing about the guard.
     await page.locator("#find-input").click();
     await expect(page.locator("#find-history-listbox")).toBeVisible();
 
-    // Click the checkbox WITHOUT dismissing the dropdown first. Playwright's
-    // own hit-target check guarantees the checkbox is the element receiving
-    // the click, so if this fails it is because the toggle was suppressed, not
-    // because something was in the way.
-    await page.locator("#regex-checkbox").check();
-    await expect(page.locator("#regex-checkbox")).toBeChecked();
+    // Measure what the overlay covers, rather than assuming it.
+    //
+    // A probe established that the Options group cannot be PARTIALLY covered:
+    // its four checkboxes sit in a 2x2 grid about 20px apart, and the overlay's
+    // height moves in whole ~24px rows, so at 1-3 entries it covers none of them
+    // and at 4+ it covers all four. There is no entry count in between. So the
+    // "an uncovered Options checkbox still toggles" assertion an earlier version
+    // of this test tried to make is not constructible in this layout.
+    //
+    // The nearest control that IS in the same column and genuinely clear of the
+    // overlay is #count-btn, further down the left column. That is what gets
+    // clicked below.
+    const geometry = await page.evaluate(() => {
+      const overlay = document.getElementById("find-history-overlay");
+      const at = (id) => {
+        const r = document.getElementById(id).getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return { id, hit: hit ? hit.id || hit.className : null, covered: !!(hit && overlay.contains(hit)) };
+      };
+      return {
+        options: ["match-case-checkbox", "whole-word-checkbox", "regex-checkbox", "include-iframes-checkbox"].map(at),
+        countBtn: at("count-btn"),
+      };
+    });
 
-    await page.locator("#match-case-checkbox").check();
-    await expect(page.locator("#match-case-checkbox")).toBeChecked();
+    // Premise 1: the overlay really is hanging over part of the form, so this is
+    // genuinely the "dropdown open over things" situation.
+    expect(geometry.options.some((o) => o.covered)).toBe(true);
+    // Premise 2: #count-btn is clear of it, so a click there is not merely being
+    // blocked by something in the way.
+    expect(geometry.countBtn.covered).toBe(false);
+    expect(geometry.countBtn.hit).toBe("count-btn");
+
+    // The assertion: a control the overlay does not cover still works while the
+    // dropdown is open. Count matches is observable - it writes to the status
+    // line - so a swallowed click is visible rather than silent.
+    await page.locator("#find-input").fill("needle");
+    await page.locator("#count-btn").click();
+    await expect(page.locator("#status-line")).toContainText(/matches/i);
+
+    // HONEST LIMIT, because the alternative is the overclaiming this pipeline
+    // has already failed twice for: this test does NOT distinguish the current
+    // row-scoped mousedown guard from the overlay-wide one it replaced. It
+    // cannot. An overlay-wide preventDefault only ever fires for events whose
+    // target is inside the overlay - i.e. for controls the overlay covers, which
+    // are unreachable to a click either way. Flipping the guard back and
+    // re-running this test leaves it green, which was verified rather than
+    // assumed. What this test pins is the user-visible invariant; the case for
+    // the narrower guard is that a preventDefault should not span a region full
+    // of unrelated controls, not that a test can catch it.
+  });
+
+  test("a control the dropdown covers becomes clickable again once it closes", async ({
+    page,
+  }) => {
+    // The other side of the same coin, and the documented behaviour rather than
+    // a defect: an open overlay DOES cover what is beneath it, so those
+    // controls are unreachable until it is dismissed. In the two-column layout
+    // the find dropdown sits over the Options group. A user presses Escape, or
+    // clicks away, or picks an entry - and then the control works.
+    //
+    // Asserted explicitly because the alternative reading ("the checkbox is
+    // broken while a dropdown is open") is the bug this file already chased
+    // once, and the difference between the two is whether the thing is
+    // physically covered.
+    // A full list, so the overlay is at its tallest and definitely reaches the
+    // Options group below. How far it reaches depends on the entry count, so the
+    // test discovers WHICH control is covered rather than hardcoding one - an
+    // earlier version assumed the regex checkbox and failed with only three
+    // entries, where the overlay stops short of it.
+    await mountPopup(page, {
+      history: Array.from({ length: 20 }, (_, i) => entry({ find: "entry-" + i })),
+    });
+
+    await page.locator("#find-input").click();
+    await expect(page.locator("#find-history-listbox")).toBeVisible();
+
+    const covered = await page.evaluate(() => {
+      const overlay = document.getElementById("find-history-overlay");
+      const ids = [
+        "match-case-checkbox",
+        "whole-word-checkbox",
+        "regex-checkbox",
+        "include-iframes-checkbox",
+      ];
+      for (const id of ids) {
+        const r = document.getElementById(id).getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        if (hit && overlay.contains(hit)) {
+          return id;
+        }
+      }
+      return null;
+    });
+
+    // With a full list the overlay must be covering at least one of them -
+    // otherwise this test is not exercising the situation it describes.
+    expect(covered).not.toBeNull();
+
+    // Dismiss with Escape - the dropdown-scoped one, which must not close the
+    // popup - and the covered control is reachable again.
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#find-history-overlay")).toBeHidden();
+
+    await page.locator("#" + covered).check();
+    await expect(page.locator("#" + covered)).toBeChecked();
   });
 
   test("clicking a row still selects it, despite the mousedown guard being scoped", async ({

@@ -39,8 +39,68 @@ html, body {
   padding: 0;
 }
 
+/*
+ * WIDTH AND HEIGHT ARE BOUNDED BY THE BROWSER, NOT BY TASTE
+ * --------------------------------------------------------
+ * A Firefox WebExtension popup cannot exceed 800x600. Past that Firefox does
+ * not grow the panel - it scrolls it, which is exactly the thing this layout
+ * exists to avoid. So height is not a free variable and "make the CSS taller"
+ * is not an available fix. The only lever is density.
+ *
+ * 620px wide, chosen deliberately:
+ *   - 180px of headroom under the 800px cap, so a longer translated label or a
+ *     wider system font cannot push it over;
+ *   - wide enough for two columns, which is what actually buys the height back:
+ *     Find beside Replace, Options beside Field types, and the thirteen
+ *     field-type checkboxes in a multi-column grid instead of thirteen stacked
+ *     rows.
+ *
+ * Before this phase - 320px wide AND single-column, stacked - the popup was
+ * 1032px tall with the field-types section in its default expanded state:
+ * 432px past the cap, i.e. it scrolled before the user did anything at all.
+ * (Worst case, state 5, was 1117px.)
+ *
+ * Read that as a fact about the OLD layout as a whole, not about the width
+ * alone.
+ *
+ * WHICH CHANGE ACTUALLY DOES THE WORK - measured, one override at a time, with
+ * everything else left in place. Content height in the default state and in the
+ * worst case (20 remembered entries with a dropdown open, the longest status
+ * line, and the undo banner showing), against the 600px cap:
+ *
+ *   nothing overridden .................... 481 / 481   fits
+ *   width 620 -> 320 ...................... 493 / 642   OVER in the worst case
+ *   outer form grid -> single column ...... 635 / 689   OVER in both
+ *   field-type groups 2x2 -> 1 column ..... 569 / 569   fits, 31px spare
+ *   within-group columns -> 1 column ...... 481 / 481   no effect at all
+ *   options 2x2 -> 1 column ............... 481 / 509   fits
+ *   both field-type grids -> 1 column ..... 674 / 674   OVER
+ *   every grid flattened, width kept ...... 950 / 1004  OVER
+ *
+ * So: the outer two-column `grid-template-areas` on #find-replace-form is the
+ * one change that is necessary on its own - flatten it and nothing else saves
+ * you. The 620px width is necessary for the worst case specifically. The inner
+ * grids are margin: each is dispensable alone and neither is dispensable
+ * together with the other.
+ *
+ * The "no effect at all" row is worth understanding rather than dismissing: the
+ * right-hand column is not what sets the popup's height at these sizes - the
+ * left-hand stack is - so making the field-type groups taller changes nothing
+ * until they overtake it. That is also why an earlier version of this comment
+ * was able to claim the within-group columns "bought the height back" and go
+ * unchallenged: it sounded reasonable and nothing measured it.
+ *
+ * test/popup-layout.spec.js measures five
+ * disclosure states against both scrollHeight and the 600px cap, including the
+ * worst case (field types expanded AND a history dropdown open AND the longest
+ * status line AND the undo-cap banner). That is the check; a screenshot is not.
+ *
+ * Note what is deliberately NOT used here: no max-height, no overflow: auto on
+ * #app, and the field-types section is still expanded by default. Each of those
+ * would make the measurement pass while leaving the popup as unusable as it was.
+ */
 body {
-  width: 320px;
+  width: 620px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
     Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
   font-size: 13px;
@@ -49,13 +109,49 @@ body {
 }
 
 #app {
-  padding: 10px 12px 12px;
+  padding: 8px 12px 10px;
 }
 
 h1 {
   font-size: 14px;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
 }
+
+/*
+ * Two columns, assigned by grid-area so no element has to be found by position.
+ * Field types spans the whole right-hand side from its row down, which is what
+ * lets the short controls stack beside it instead of below it.
+ *
+ * Done with named areas on the existing elements rather than by adding wrapper
+ * divs: every id and data-testid the tests and the Selenium suite address stays
+ * exactly where it was.
+ */
+#find-replace-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "find     replace"
+    "preview  preview"
+    "options  fieldtypes"
+    "actions  fieldtypes"
+    "note     fieldtypes"
+    "warning  fieldtypes"
+    "progress fieldtypes"
+    "status   fieldtypes";
+  column-gap: 12px;
+  align-items: start;
+}
+
+#find-row { grid-area: find; }
+#replace-row { grid-area: replace; }
+#match-preview-row { grid-area: preview; }
+#options-fieldset { grid-area: options; }
+#field-types-section { grid-area: fieldtypes; }
+#actions-row { grid-area: actions; }
+#undo-note { grid-area: note; }
+#undo-warning { grid-area: warning; }
+#progress-row { grid-area: progress; }
+#status-line { grid-area: status; }
 
 h2 {
   margin: 0;
@@ -265,8 +361,27 @@ a:focus-visible {
 fieldset {
   border: 1px solid var(--border);
   border-radius: 6px;
-  margin: 0 0 10px;
-  padding: 8px 10px 10px;
+  margin: 0 0 8px;
+  padding: 6px 8px 7px;
+}
+
+/*
+ * The four option checkboxes in a 2x2 grid rather than four stacked rows. Half
+ * the height for the same information, and at 620px wide there is no shortage
+ * of horizontal room.
+ */
+#options-fieldset > .checkbox-row {
+  margin: 0;
+}
+
+#options-fieldset {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 2px 10px;
+}
+
+#options-fieldset legend {
+  grid-column: 1 / -1;
 }
 
 legend {
@@ -322,8 +437,28 @@ legend {
   transform: rotate(-90deg);
 }
 
+/*
+ * Field types: the thirteen checkboxes were thirteen stacked rows, which on
+ * their own accounted for most of the overflow. Two changes, both density:
+ *
+ *   1. the four groups sit in a 2x2 grid rather than one above another, and
+ *   2. the checkboxes WITHIN each group flow into as many columns as fit, so
+ *      "text search url tel email" becomes two short rows instead of five.
+ *
+ * Neither of those is individually necessary. See the measured table in the
+ * width comment at the top of this file before assuming otherwise - two earlier
+ * versions of this comment asserted a ranking between them, both times by
+ * reasoning rather than measurement, and both times wrongly.
+ *
+ * The section is still expanded by default, which is the point: it has to fit
+ * as the user first sees it. A test asserts that default rather than trusting
+ * it ("state 1" checks aria-expanded="true" before measuring).
+ */
 #field-types-content {
-  padding: 8px 10px 4px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+  padding: 6px 8px 7px;
 }
 
 #field-types-content[hidden] {
@@ -333,7 +468,23 @@ legend {
 .field-types-actions {
   display: flex;
   gap: 12px;
-  margin-bottom: 6px;
+  margin-bottom: 0;
+  grid-column: 1 / -1;
+}
+
+.field-type-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 1px 8px;
+  align-content: start;
+}
+
+.field-type-group legend {
+  grid-column: 1 / -1;
+}
+
+.field-type-group > .checkbox-row {
+  margin: 0;
 }
 
 .field-types-actions a {

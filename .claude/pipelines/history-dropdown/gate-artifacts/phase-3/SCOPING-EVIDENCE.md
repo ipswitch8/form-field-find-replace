@@ -1,4 +1,43 @@
-# phase-3: the mousedown-guard scoping bug, and what the evidence for it actually is
+# phase-3: the mousedown-guard scoping change, and what the evidence for it actually is
+
+> **CORRECTION, added during phase-4. Read this before the rest of the file.**
+>
+> This document originally called the overlay-wide `mousedown` guard "a real
+> defect a user would hit by clicking a checkbox while a dropdown was open". On
+> re-examination during phase-4, that framing does not survive:
+>
+> An overlay-wide `preventDefault()` on `mousedown` only fires for events whose
+> target is **inside the overlay** — i.e. for controls the overlay visually
+> covers. Those controls are unreachable to a click either way, because the
+> overlay is on top of them. Controls the overlay does **not** cover never
+> deliver a `mousedown` to it at all, so the guard cannot affect them. There is
+> therefore no configuration in which a user loses a click they could otherwise
+> have made.
+>
+> Which also means **no test can distinguish the two guard scopes.** That was
+> verified twice by flipping the guard back and finding the tests green, and it
+> is why karen's phase-4 request — "assert an uncovered checkbox still toggles
+> while the dropdown is open" — is not constructible as a discriminating test.
+> A further complication, measured by probe: the Options group cannot be
+> *partially* covered at all. Its four checkboxes sit ~20px apart in a 2x2 grid
+> while the overlay grows in whole ~24px rows, so it covers none of them at 1-3
+> entries and all four at 4+.
+>
+> The 2/93 → 0/93 measurement below is left in place because it was really
+> observed, but it should now be read as a **correlation under load, not a
+> demonstrated cause**. A re-run during phase-4 at 6 workers was inconclusive:
+> it produced 15 failures with BOTH guards plus `GraphicsCriticalError` crash
+> annotations, i.e. the machine was saturated and the experiment measured the
+> load rather than the code.
+>
+> **What stands:** the row-scoped guard is better code — a `preventDefault()`
+> should not span a region containing unrelated controls — and it is kept on
+> that basis. The two tests are kept as user-visible invariants, and their own
+> comments now say they do not guard the scope change specifically.
+>
+> **What does not stand:** the claim that this was a user-facing bug, and the
+> implication that the scoping fixed the intermittent test failure.
+
 
 ## The symptom
 
