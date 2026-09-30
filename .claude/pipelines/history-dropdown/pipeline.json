@@ -1,0 +1,107 @@
+{
+  "task": "Add remembered Find/Replace history to the Form Field Find & Replace Firefox extension: (1) remember previous Find and Replace values and show them in a dropdown when the Find/Replace fields are clicked, (2) remember the search settings (regex, match case, whole word, include-iframes, field-type selections) associated with each remembered pair and restore them when an entry is selected, (3) expand the popup dialog so all elements display without vertical scrolling. Constraints: manifest permissions stay exactly [\"activeTab\",\"scripting\",\"storage\"] with no host_permissions and no network calls; no innerHTML/eval/Function( anywhere in popup/ or content/ (createElement/textContent only for the new dropdown); storage.local only, never storage.sync; history storage must be bounded; the existing restoreState() race (a prior bug: restoreState overwriting typed input) must not be reintroduced; the dropdown must be keyboard-accessible and automation-friendly (stable ids/data-testid, accessible names/roles); Firefox popups cap at 800x600, so the sizing fix must be a layout/density change, not just taller CSS; all 88 existing Playwright tests and 8 existing Selenium tests must keep passing unweakened.",
+  "pipeline_id": "history-dropdown",
+  "generated_at": "2026-09-29T00:00:00Z",
+  "total_phases": 5,
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Design decision + red-baseline regression tests",
+      "description": "Record the history design decisions in writing (shared paired-entry list vs two independent lists, storage key, bound, save-trigger, dedup/eviction rule, dropdown positioning strategy), then write new Playwright tests against that decided shape that fail against the current, unmodified popup/popup.js and popup/popup.html.",
+      "acceptance_criteria": [
+        "A written decision exists (as a code comment block at the top of the new history section of popup/popup.js, or a dedicated section in README.md/SPEC.md) stating explicitly: history is ONE shared list of paired entries (find value + replace value + the four option flags [matchCase, wholeWord, regex, includeIframes] + the full fieldTypes selection map) captured together, not two independent find-only/replace-only lists -- selecting any entry restores the whole pair plus its settings",
+        "The same written decision names: the storage.local key used for history (distinct from the existing STORAGE_KEY='formFieldFindReplace' state key, e.g. 'formFieldFindReplaceHistory', so history and last-typed-state remain independently readable/clearable), the maximum entry count (a fixed integer, e.g. 20), the eviction rule when the bound is exceeded (oldest evicted, FIFO, OR most-recently-used semantics with move-to-front on exact-duplicate re-save -- pick one and state it), and the save trigger (a new entry is recorded only when Count matches or Replace all is invoked with a non-empty find value -- not on every keystroke, to avoid saving typing noise)",
+        "The written decision states the dropdown's positioning strategy: the history listbox for each input is an absolutely-positioned overlay anchored under that input (not inserted into normal document flow), specifically so opening it does not increase the popup document's scrollHeight -- this is load-bearing for phase 4's no-overflow requirement, not a cosmetic choice",
+        "A new Playwright test file (e.g. test/history-dropdown.spec.js) exists under C:\\Users\\mhasse\\source\\FF_replace\\test\\, following the addInitScript-mocked-browser-and-storage mounting pattern already used in test/undo.spec.js and test/activation.spec.js",
+        "The new file contains at least these failing-by-design test cases against current code: (a) after invoking Replace all (or Count) with a non-empty find value via the mocked flow, storage.local under the decided history key contains a new entry with the find/replace/options/fieldTypes recorded; (b) clicking the find input renders a visible listbox (role='listbox') of prior entries built via createElement (asserted by inspecting the live DOM, not by string-matching HTML source) with stable ids/data-testid attributes on both the listbox container and each option row; (c) selecting a rendered history entry (by click and separately by keyboard Enter after ArrowDown navigation) restores find, replace, matchCase, wholeWord, regex, includeIframes, and at least one non-default field-type checkbox state to that entry's saved values; (d) saving more than the decided max entry count leaves storage.local's history array length capped at that max, with the correct entries evicted per the documented eviction rule",
+        "Running `npx playwright test test/history-dropdown.spec.js` against the current unmodified popup/popup.js and popup/popup.html produces at least 3 failing tests (documented with test name + failure reason in the phase's completion evidence), proving these are not vacuous pass-either-way tests",
+        "No file under C:\\Users\\mhasse\\source\\FF_replace\\popup\\ or C:\\Users\\mhasse\\source\\FF_replace\\content\\ is modified in this phase -- only new test files and documentation"
+      ],
+      "gate_agents": [
+        "karen",
+        "validator",
+        "test-runner",
+        "claim-check"
+      ]
+    },
+    {
+      "id": "phase-2",
+      "name": "History persistence layer",
+      "description": "Implement the bounded, paired-entry history storage layer in popup/popup.js per phase 1's written decision -- new storage key, save/load/prune functions wired into the existing Count/Replace-all action handlers -- without yet building the visible dropdown UI, and turn the phase-1 storage/bounding tests green.",
+      "acceptance_criteria": [
+        "popup/popup.js defines a history storage key distinct from STORAGE_KEY (matching phase 1's documented name), a MAX_HISTORY_ENTRIES constant matching the documented bound, and functions to load history from storage.local, append/dedup a new paired entry, and persist the pruned array back to storage.local -- using storage.local exclusively (grep confirms no storage.sync usage anywhere in the diff)",
+        "handleCount() and handleReplaceAll() in popup/popup.js record a new history entry (find, replace, options, fieldTypes) only when the find value is non-empty at the moment the action runs, matching the documented save trigger -- no history entry is written on every keystroke/input event",
+        "The append logic enforces the documented bound: saving beyond MAX_HISTORY_ENTRIES evicts per the documented rule (verified by the phase-1 bounding test (d) now passing) rather than growing storage.local without limit",
+        "Every new field written to storage.local is built with primitive string/boolean/object values only -- no functions, no DOM nodes -- consistent with storage.local's structured-clone requirement and the threat model's 'attacker-influenced remembered text' note (a remembered find/replace value may contain arbitrary text copied from a page; it is stored as inert string data, never interpreted)",
+        "The phase-1 storage/bounding test cases (a) and (d) in test/history-dropdown.spec.js now pass; the dropdown-rendering and entry-selection test cases (b) and (c) are still expected to fail at this point (no UI yet) and that is documented as expected, not silently ignored",
+        "`bash security-audit.sh` exits 0 against the modified working tree (permissions allowlist unchanged, no eval/innerHTML/Function( introduced, no host_permissions added)"
+      ],
+      "gate_agents": [
+        "karen",
+        "validator",
+        "security-audit",
+        "test-runner",
+        "claim-check"
+      ]
+    },
+    {
+      "id": "phase-3",
+      "name": "Keyboard-accessible history dropdown UI",
+      "description": "Build the createElement/textContent-only history dropdown for the Find and Replace inputs -- ARIA combobox/listbox pattern, mouse and keyboard operable, stable automation-friendly ids -- wired so selecting an entry restores the full paired state without racing or reintroducing the restoreState()-overwrites-typed-input bug, and turn the remaining phase-1 UI tests green.",
+      "acceptance_criteria": [
+        "popup/popup.html and popup/popup.js gain a history listbox associated with each of #find-input and #replace-input, built entirely via document.createElement/appendChild/textContent -- grep of the diff and of the final popup/popup.js and popup/popup.html confirm zero occurrences of `.innerHTML =` (security-audit.sh's dangerous_code_scan already fails the build on this; this criterion is the same check applied explicitly to the new code)",
+        "Each listbox and each rendered option row carries a stable id and data-testid attribute (e.g. #find-history-listbox / [data-testid='find-history-listbox'], and per-row ids/data-testids incorporating a stable index), and the trigger input has role='combobox', aria-expanded, and aria-controls pointing at the listbox id, and the listbox itself has role='listbox' with role='option' rows -- verifiable by reading the rendered DOM in a Playwright test, not by eyeballing markup",
+        "The dropdown opens on click/focus of the associated input and is operable by keyboard alone: ArrowDown/ArrowUp move a visually and programmatically indicated active option (aria-activedescendant or equivalent), Enter selects the active option and closes the dropdown, and Escape closes the dropdown WITHOUT triggering the existing global Escape handler's cancel-run-or-close-popup behavior (i.e. Escape's effect while the dropdown is open is scoped to the dropdown first, verified by a test that opens the dropdown, presses Escape, and asserts the popup is still open and no run was cancelled)",
+        "Selecting an entry (by click or by keyboard) restores find, replace, matchCase, wholeWord, regex, includeIframes, and all fieldTypes checkboxes to that entry's saved values in a single synchronous update, then persists the restored state via the existing persistState() path -- reusing the existing applyState()-style assignment logic rather than a second duplicated restore implementation",
+        "The dropdown wiring does not reintroduce the restoreState() race: the dropdown's click/focus listeners and any history-driven restore are attached only after init()'s `await restoreState()` has resolved, and opening the dropdown or selecting an entry never runs concurrently with an in-flight restoreState() call, verified by a Playwright test that triggers a click on the find input immediately after popup mount and asserts the typed/restored value is never transiently overwritten",
+        "Phase-1 test cases (b) and (c) in test/history-dropdown.spec.js now pass; test cases (a) and (d) from phase 2 still pass (no regression)",
+        "`bash security-audit.sh` exits 0 against the modified working tree"
+      ],
+      "gate_agents": [
+        "karen",
+        "validator",
+        "test-runner",
+        "claim-check"
+      ]
+    },
+    {
+      "id": "phase-4",
+      "name": "No-scroll popup layout",
+      "description": "Rework popup/popup.css (and popup/popup.html structure if needed) so every element is visible without vertical scrolling across all disclosure states, within Firefox's 800x600 popup cap, using layout density changes (e.g. a multi-column field-type grid, tighter vertical rhythm, the phase-1-documented absolutely-positioned dropdown overlay) rather than simply increasing height -- backed by a mechanical Playwright measurement, not a visual eyeball check.",
+      "acceptance_criteria": [
+        "A new or extended Playwright test (e.g. test/popup-layout.spec.js or an added block in test/history-dropdown.spec.js) asserts `document.documentElement.scrollHeight <= document.documentElement.clientHeight` (or the equivalent body measurement) with zero tolerance for vertical overflow, at the popup's declared CSS width, for EACH of these distinct states in the same test file: (1) default mount with the field-types section expanded (its default state) and no status/error text, (2) the undo-cap warning banner (#undo-warning) visible with its longest realistic message, (3) the status line (#status-line) showing its longest realistic message (a multi-part Replaced/skipped/timedOut string), (4) the find-input history dropdown open showing at least 5 entries, (5) the field-types section expanded AND the history dropdown open simultaneously (the worst-case combination)",
+        "The popup's total rendered height in every one of the five states stays within Firefox's hard 800x600 popup cap (documented as a comment near the CSS width/height rules explaining why height is bounded and cannot simply grow), and the fix is achieved via layout density (grep/read of popup.css shows a multi-column grid or flex-wrap applied to the field-type checkbox groups, reduced vertical margins/padding, and the history listbox using position:absolute so it does not contribute to document flow height) rather than by only changing a max-height or overflow:auto rule to hide the problem",
+        "popup/popup.css's body width is documented (comment) alongside the reasoning for its final value, and the width chosen still fits the 800px cap with margin",
+        "No existing #app, #find-replace-form, or field id/data-testid attribute is removed or renamed (only layout/CSS and structural wrapper changes), so no unrelated existing Playwright test breaks from selector changes",
+        "All phase-1/2/3 tests in test/history-dropdown.spec.js still pass unmodified, plus the new popup-layout overflow tests all pass"
+      ],
+      "gate_agents": [
+        "karen",
+        "validator",
+        "test-runner",
+        "claim-check"
+      ]
+    },
+    {
+      "id": "phase-5",
+      "name": "Full regression sweep, security audit, and documentation",
+      "description": "Run the complete Playwright and Selenium suites together with the new history/dropdown/layout tests to confirm no regression anywhere, confirm the security policy still holds, update README.md/SPEC.md/CLAUDE.md to describe the new feature and its design decisions, and confirm the extension still builds as an unsigned local .xpi.",
+      "acceptance_criteria": [
+        "`npm test` (full Playwright suite -- the prior 88 tests plus all new history/dropdown/layout tests) reports zero failures, with results written to test-results/gtest-results.xml",
+        "`npm run test:selenium` reports all 8 existing Selenium tests passing with no new failures and no test weakened or skipped",
+        "`bash security-audit.sh` exits 0 on the final working tree: manifest.json's permissions remain exactly [\"activeTab\",\"scripting\",\"storage\"], no host_permissions key present, no live eval(/.innerHTML =/Function( in popup/ or content/, and no committed-credential pattern matches",
+        "`npm run build:xpi` succeeds locally and produces web-ext-artifacts/ffr.xpi (an unsigned local build only -- this criterion does NOT require AMO signing, a merged PR, or a pushed tag)",
+        "README.md and/or SPEC.md gain a section documenting: the shared paired-entry history model, the storage.local key and its bound, the save-trigger rule, the dropdown's ARIA combobox/listbox pattern and keyboard operation, and the popup's width/height layout constraints under Firefox's 800x600 cap -- consistent with CLAUDE.md's existing standard of documenting real data flow (not an aspirational description a grep would disprove)",
+        "manifest.json's version field is incremented from 0.4.0 to reflect the new feature (e.g. 0.5.0), consistent with the existing build:xpi script's version-matching behavior",
+        "A `git diff` review confirms no unrelated files were touched and no test was deleted or weakened to make the suite pass"
+      ],
+      "gate_agents": [
+        "karen",
+        "validator",
+        "test-runner",
+        "security-audit",
+        "claim-check"
+      ]
+    }
+  ]
+}

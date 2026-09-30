@@ -290,6 +290,103 @@ the alternative is second-guessing which of your replacement's characters ought
 to become non-breaking, which would be worse. If you need the indentation
 preserved, type non-breaking spaces into the Replace box, or use regex mode.
 
+## Remembered find/replace history
+
+The Find and Replace boxes remember what you have run before. Clicking (or
+focusing) either box opens a dropdown of previous entries; picking one refills
+*both* boxes and restores the option checkboxes that were in effect at the time.
+
+This section is the design decision, written down before the code was built,
+because several of its choices are load-bearing and would otherwise look
+arbitrary to the next reader.
+
+### One shared list of paired entries, not two independent lists
+
+History is **one list**. Each entry records, as a single unit:
+
+- the Find value,
+- the Replace value,
+- all four option flags — `matchCase`, `wholeWord`, `regex`, `includeIframes`,
+- the complete `fieldTypes` selection map (all thirteen checkboxes).
+
+There is deliberately **no** separate find-only list and replace-only list.
+The settings have to travel with the entry to be useful: a remembered Find
+value of `(\$\d+),[\d,.]+` means nothing without `regex` turned on, and
+recalling it into a popup with `regex` off would silently search for that text
+literally and report no matches. Splitting find and replace into independent
+lists would make "which settings belong to this value" unanswerable, since a
+find from one run could be paired with a replace from another.
+
+So selecting *any* entry — from either box's dropdown — restores the whole
+tuple. Both dropdowns list the same entries; they differ only in which value
+each row shows first.
+
+### Where it is stored, and the bound
+
+| Decision | Value |
+|---|---|
+| Storage area | `browser.storage.local` — never `storage.sync`, same as the rest of the extension |
+| Key | `formFieldFindReplaceHistory` |
+| Maximum entries | **20** |
+| Eviction | Most-recently-used. Newest entry at index 0; re-saving an entry whose find, replace, options and fieldTypes are all identical to an existing one *moves that entry to the front* rather than adding a duplicate. When the list would exceed 20, the entry at the tail (least recently used) is dropped. |
+| Save trigger | Only when **Count matches** or **Replace all** is invoked with a non-empty Find value. |
+
+The key is deliberately **separate** from the existing
+`formFieldFindReplace` state key, which holds only the last-typed values. Two
+keys means the two concerns can be read, reasoned about, and cleared
+independently — clearing your history does not reset your current options, and
+vice versa.
+
+The bound is not decoration. `storage.local` has no per-key quota the
+extension can rely on, and a remembered value is arbitrary text the user may
+have copied off a page, so it can be long. An unbounded list would grow with
+every run for the life of the profile. 20 is enough to cover a working
+session's worth of patterns while keeping the worst case small.
+
+**Why the save trigger is an action and not a keystroke.** Persisting on every
+`input` event would fill the list with prefixes of what you were typing —
+`f`, `fo`, `foo` — and evict the entries you actually wanted within a few
+seconds of typing. Recording only on Count or Replace all means an entry
+represents a search you *meant*, and it is the same gesture in both cases:
+Count is the read-only rehearsal for a replace, and a pattern worth counting
+is worth remembering.
+
+Remembered values are stored as inert strings. Nothing reads them back as
+code, as markup, or as a regex source without the user's own `regex`
+checkbox saying so.
+
+### Why the dropdown is an absolutely-positioned overlay
+
+Each dropdown is rendered as an `position: absolute` overlay anchored under
+its input, **not** inserted into the popup's normal document flow.
+
+That is a requirement, not a style preference. The popup must display every
+element without vertical scrolling (see below), and a dropdown that occupied
+real layout space would add its own height to the document the moment it
+opened — turning a popup that fits into one that does not, in exactly the
+state where the user is mid-interaction and least able to tolerate the content
+jumping. Taking the overlay out of flow means opening the dropdown cannot
+change `document.documentElement.scrollHeight` at all. A test asserts that
+for the worst-case state: field types expanded *and* a dropdown open.
+
+Every row is built with `document.createElement` and `textContent`. No
+`innerHTML`, anywhere — `security-audit.sh` fails the build on it, and a
+remembered value is precisely the kind of user-supplied text that makes that
+rule matter rather than being theoretical.
+
+### Keyboard and automation
+
+The dropdown implements the ARIA combobox/listbox pattern: the input carries
+`role="combobox"` with `aria-expanded` and `aria-controls`; the overlay is a
+`role="listbox"` of `role="option"` rows. `ArrowDown`/`ArrowUp` move the
+active option, `Enter` selects it, and `Escape` closes the dropdown
+*without* falling through to the popup's global Escape handler (which cancels
+a run or closes the popup) — the first Escape belongs to the dropdown.
+
+Listbox containers and option rows both carry stable `id` and `data-testid`
+attributes, so Selenium and Playwright can address them without relying on
+position or text.
+
 ## Known limitations
 
 - **Closed shadow roots are unreachable by design.** There is no supported

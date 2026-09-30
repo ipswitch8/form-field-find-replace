@@ -1,0 +1,16 @@
+compact_at=2026-09-29T16:21:34-07:00
+session=ca9c858a-43af-4ba8-99d2-af26611ad82c
+base=.claude/pipelines/whitespace-bug
+task=Fix the Firefox extension bug where searching a contenteditable field for a needle with leading/internal literal spaces (e.g. "   to a brief") fails to match, because Firefox substitutes U+00A0 (NBSP) for consecutive spaces as the user types into contenteditable, while textContent still reads back as space-looking characters. Make the compiled matcher's literal-space handling tolerant of whitespac
+phases=phase-1,phase-2
+gate_artifacts_present:
+  ./phase-1/claim-check.json
+  ./phase-1/gtest-results.xml
+  ./phase-1/karen.json
+  ./phase-1/test-runner.json
+  ./phase-1/validator.json
+  ./phase-2/claim-check.json
+  ./phase-2/gtest-results.xml
+  ./phase-2/karen.json
+  ./phase-2/test-runner.json
+  ./phase-2/validator.json
