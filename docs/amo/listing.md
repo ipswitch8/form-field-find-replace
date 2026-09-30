@@ -47,10 +47,26 @@ inquiries@itwerx.net
 https://github.com/ipswitch8/form-field-find-replace
 ```
 
-> **Decide before submitting.** That repository is currently **private**, so a
-> listed add-on would point its support link at a 404 for everyone who clicks
-> it. Either make the repo public, or point these fields at a page that exists.
-> The support *email* above is fine either way.
+The repository was made **public** for this submission, so that link resolves
+for anyone who clicks it from the listing.
+
+Before it was made public, every blob in all 35 commits of history was scanned
+for credential-shaped content — a public repo exposes its whole history, not
+just its tip. The scan is `git grep` over `git rev-list --all` for AMO JWT
+issuer shapes, secret assignments, long hex runs, AWS keys, private-key
+headers, and GitHub/Slack tokens. Three shapes matched and all three were
+verified benign:
+
+1. the `user:12345678:123` placeholder in `sign.sh` and `README.md`;
+2. the SHA-256 bookkeeping values in the pipeline state files under
+   `.claude/pipelines/`;
+3. `.amo-upload-uuid` — web-ext's upload-correlation cache, which was tracked
+   until commit `528112a` untracked it.
+
+The third is a real historical artefact but not a credential: it identifies a
+prior upload and authorises nothing without the JWT key and secret. Those were
+never committed — `.amo-credentials` has been gitignored from the start and
+appears in no commit in the repository's history.
 
 ## License
 
@@ -179,26 +195,28 @@ Suggested captions:
       pointing at a private repo is a broken support link.
 - [ ] Confirm the **MIT licence** and the copyright line in `LICENSE`
       (currently "Michael Hasse (itwerx.net)").
-- [ ] Decide on the **add-on id**. It is `mhasse@itwerx.net` and is already
-      signed and published on the unlisted channel under that id. See the
-      warning below.
+- [x] **Add-on id** — changed to `inquiries@itwerx.net` at v0.6.0. See below.
 - [ ] Run `npm run sign -- listed` (the script already accepts the channel
       argument and validates it).
 
-### The add-on id is not a contact field
+### The add-on id was changed at v0.6.0 — what that cost
 
-`browser_specific_settings.gecko.id` is `mhasse@itwerx.net`. It looks like an
-email address because that is the conventional format, but it is an
-**identifier**, not a contact — Mozilla never mails it, and users do not write
-to it.
+`browser_specific_settings.gecko.id` is now `inquiries@itwerx.net`. It was
+`mhasse@itwerx.net` up to and including v0.5.0.
 
-Changing it to `inquiries@itwerx.net` would create a **different add-on** as
-far as Firefox and AMO are concerned: the already-signed and installed v0.5.0
-would not upgrade to it, and anyone running it would have to remove and
-reinstall. The id was therefore left alone, and `inquiries@itwerx.net` is used
-for every field that is genuinely a contact — support email, listing copy and
-reviewer correspondence.
+The id looks like an email address because that is the conventional format, but
+it is an **identifier**, not a contact — Mozilla never mails it and users never
+write to it. Changing it is therefore not a rename: it creates a **different
+add-on** as far as Firefox and AMO are concerned. The signed v0.5.0 does not
+upgrade to v0.6.0; anything running the old build has to be removed and
+reinstalled.
 
-If you do want the public identifier changed, that is a deliberate break rather
-than a rename, and it is best done at a version bump with a note telling
-existing users to reinstall.
+That was acceptable here for one reason only: at the time of the change there
+were no installations outside the development machine, so there was nothing to
+strand. **That will not be true again.** Once this is listed and has users, the
+id is effectively permanent — changing it would abandon every installed copy
+without so much as an update prompt, and AMO will not let the old id be reused.
+
+The version was bumped 0.5.0 → 0.6.0 in the same change, so that the two signed
+artifacts are never both called 0.5.0. This project has already lost time once
+to two `.xpi` files that differed only by a suffix.

@@ -55,7 +55,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FIXTURE = "file:///" + os.path.join(PROJECT_ROOT, "test", "fixture.html").replace("\\", "/")
 
-ADDON_ID = "mhasse@itwerx.net"
+ADDON_ID = "inquiries@itwerx.net"
 
 # Pinning the internal UUID makes the popup addressable at a known
 # moz-extension:// URL. Without this the UUID is randomised per profile and the

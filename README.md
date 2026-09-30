@@ -100,9 +100,15 @@ Firefox with `xpinstall.signatures.required` left **on**. A temporary install
 accepts anything and proves nothing; only the permanent path exercises
 signature enforcement.
 
-Note that the add-on id (`mhasse@itwerx.net`) binds permanently to the AMO
+Note that the add-on id (`inquiries@itwerx.net`) binds permanently to the AMO
 account on first submission and cannot be reused, so change it before your
 first signing run, not after.
+
+It was `mhasse@itwerx.net` up to and including v0.5.0. Changing it makes this a
+**different add-on** to Firefox and AMO — v0.5.0 does not upgrade to v0.6.0,
+and anyone running the older build must remove it and install the new one. That
+was an acceptable break here only because there were no installations outside
+this machine at the time. Do not repeat it casually once the add-on is listed.
 
 ## Running the tests
 

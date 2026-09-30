@@ -1,7 +1,7 @@
 # CLAUDE.md — Security Documentation
 
 Security documentation for the **Form Field Find & Replace** Firefox extension
-(`mhasse@itwerx.net`). This file is the authoritative record of the
+(`inquiries@itwerx.net`). This file is the authoritative record of the
 threat model, permission rationale, and the hard rules the codebase must never
 violate. `security-audit.sh` mechanically enforces a subset of this; the rest
 is enforced by code review against this document.
