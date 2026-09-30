@@ -56,11 +56,25 @@ EXPECTED_FILES = frozenset([
     "icons/icon.svg",
 ])
 
-# A Mozilla-signed build legitimately gains these. They are the signature.
+# A Mozilla-signed build legitimately gains these. They ARE the signature.
+#
+# Read off a real AMO-signed archive, not guessed. The first version of this
+# list was guessed from the three names the signature check already looked for
+# (mozilla.rsa, mozilla.sf, manifest.mf) because only an unsigned build was to
+# hand at the time - and it promptly failed the first genuinely signed package
+# with "unexpected file: META-INF/cose.manifest". AMO adds a COSE signature
+# (RFC 8152) alongside the older PKCS#7 one; both are present on a current
+# unlisted-channel signing.
+#
+# The irony is on the nose: this allowlist exists because an exclusion list only
+# excludes what someone thought of, and its own first draft only allowed what
+# someone thought of. Hence: measured from the artifact.
 SIGNING_FILES = frozenset([
+    "META-INF/manifest.mf",
     "META-INF/mozilla.rsa",
     "META-INF/mozilla.sf",
-    "META-INF/manifest.mf",
+    "META-INF/cose.manifest",
+    "META-INF/cose.sig",
 ])
 
 
