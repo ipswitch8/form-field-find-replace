@@ -12,25 +12,86 @@
 
   <form id="find-replace-form" data-testid="find-replace-form" autocomplete="off">
 
+    <!--
+      Each input sits in a .combo wrapper that establishes the positioning
+      context for its history overlay. The overlay is position:absolute
+      (popup.css) so that opening it cannot add to the document's height - see
+      README.md, "Why the dropdown is an absolutely-positioned overlay". The
+      <ul> rows are created by popup.js with createElement/textContent; there
+      is no markup here for them on purpose, because a remembered value is
+      arbitrary user text and must never be parsed as HTML.
+    -->
     <div class="field-row">
       <label for="find-input" id="find-label" data-testid="find-label">Find</label>
-      <input
-        type="text"
-        id="find-input"
-        name="find"
-        data-testid="find-input"
-        aria-describedby="status-line"
-      >
+      <div class="combo" id="find-combo" data-testid="find-combo">
+        <input
+          type="text"
+          id="find-input"
+          name="find"
+          data-testid="find-input"
+          aria-describedby="status-line"
+          role="combobox"
+          aria-expanded="false"
+          aria-controls="find-history-listbox"
+          aria-autocomplete="list"
+          autocomplete="off"
+        >
+        <div
+          class="history-overlay"
+          id="find-history-overlay"
+          data-testid="find-history-overlay"
+          hidden
+        >
+          <ul
+            id="find-history-listbox"
+            data-testid="find-history-listbox"
+            role="listbox"
+            aria-label="Previous searches"
+          ></ul>
+          <button
+            type="button"
+            class="history-clear"
+            id="find-history-clear"
+            data-testid="find-history-clear"
+          >Clear history</button>
+        </div>
+      </div>
     </div>
 
     <div class="field-row">
       <label for="replace-input" id="replace-label" data-testid="replace-label">Replace with</label>
-      <input
-        type="text"
-        id="replace-input"
-        name="replace"
-        data-testid="replace-input"
-      >
+      <div class="combo" id="replace-combo" data-testid="replace-combo">
+        <input
+          type="text"
+          id="replace-input"
+          name="replace"
+          data-testid="replace-input"
+          role="combobox"
+          aria-expanded="false"
+          aria-controls="replace-history-listbox"
+          aria-autocomplete="list"
+          autocomplete="off"
+        >
+        <div
+          class="history-overlay"
+          id="replace-history-overlay"
+          data-testid="replace-history-overlay"
+          hidden
+        >
+          <ul
+            id="replace-history-listbox"
+            data-testid="replace-history-listbox"
+            role="listbox"
+            aria-label="Previous replacements"
+          ></ul>
+          <button
+            type="button"
+            class="history-clear"
+            id="replace-history-clear"
+            data-testid="replace-history-clear"
+          >Clear history</button>
+        </div>
+      </div>
     </div>
 
     <div id="match-preview-row" class="field-row" data-testid="match-preview-row">

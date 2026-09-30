@@ -182,14 +182,12 @@ function updatePreview() {
   ) {
     // content/find-replace.js failed to load for some reason - fail quietly,
     // the preview is a convenience, not a required control path.
-    els.matchPreview.textContent = "";
-    els.matchPreview.classList.remove("status-error");
+    setPreviewText("");
     return;
   }
 
   if (state.find === "") {
-    els.matchPreview.textContent = "";
-    els.matchPreview.classList.remove("status-error");
+    setPreviewText("");
     return;
   }
 
@@ -201,19 +199,37 @@ function updatePreview() {
   );
 
   if (!result.ok) {
-    els.matchPreview.textContent = result.error || "Invalid pattern.";
-    els.matchPreview.classList.add("status-error");
+    setPreviewText(result.error || "Invalid pattern.", { error: true });
     return;
   }
-
-  els.matchPreview.classList.remove("status-error");
 
   if (!result.hasMatch) {
-    els.matchPreview.textContent = "No match in sample text.";
+    setPreviewText("No match in sample text.");
     return;
   }
 
-  els.matchPreview.textContent = result.preview;
+  setPreviewText(result.preview);
+}
+
+/**
+ * Write the preview box's text.
+ *
+ * The box has a FIXED height (popup.css explains why: a growing preview shifted
+ * every control below it a fifth of a second after typing stopped, so a click
+ * aimed at a checkbox could land somewhere else). Fixed height means long
+ * content is clipped, so the full string also goes on `title` - otherwise a
+ * truncated regex error would be actively misleading rather than merely terse.
+ * @param {string} text
+ * @param {{error?: boolean}} [opts]
+ */
+function setPreviewText(text, opts = {}) {
+  els.matchPreview.textContent = text;
+  els.matchPreview.classList.toggle("status-error", Boolean(opts.error));
+  if (text) {
+    els.matchPreview.setAttribute("title", text);
+  } else {
+    els.matchPreview.removeAttribute("title");
+  }
 }
 
 /**
@@ -468,6 +484,342 @@ function recordHistoryEntry() {
   historyEntries = [fresh, ...rest].slice(0, MAX_HISTORY_ENTRIES);
 
   persistHistory();
+}
+
+/**
+ * Remove every remembered entry, in memory and in storage.local.
+ *
+ * Why this exists at all: a gate (security-audit, phase 2) pointed out that
+ * this feature did not introduce a new data class - the popup's own typed text
+ * already went to storage.local - but it did take retention from one entry to
+ * twenty, with no way for the user to undo that. Someone who pastes a password
+ * or a customer record into the Find box should be able to get rid of it
+ * without clearing their whole browser profile. So: one button, both
+ * dropdowns, no confirmation prompt (there is nothing destructive about
+ * forgetting a search, and a prompt would make people click through it).
+ */
+function clearHistory() {
+  historyEntries = [];
+  persistHistory();
+}
+
+// ---- History dropdown (the combobox/listbox UI) -------------------------
+//
+// ARIA combobox/listbox, built entirely with createElement/textContent. NOT
+// `innerHTML`: .claude-security.json's dangerous_code_scan fails the build on
+// it, and a remembered value is exactly the sort of arbitrary page-copied text
+// that makes that rule matter rather than being ceremonial. A test feeds an
+// <img onerror> string in as a remembered find value and asserts zero <img>
+// elements come out.
+//
+// Both inputs show the SAME shared list; they differ only in which of the two
+// values each row leads with.
+
+/** The two comboboxes, keyed by the field they belong to. */
+const historyUi = {
+  find: {
+    input: els.find,
+    overlay: document.getElementById("find-history-overlay"),
+    listbox: document.getElementById("find-history-listbox"),
+    clearBtn: document.getElementById("find-history-clear"),
+    optionIdPrefix: "find-history-option-",
+    /** Which value this dropdown leads with. */
+    primary: "find",
+  },
+  replace: {
+    input: els.replace,
+    overlay: document.getElementById("replace-history-overlay"),
+    listbox: document.getElementById("replace-history-listbox"),
+    clearBtn: document.getElementById("replace-history-clear"),
+    optionIdPrefix: "replace-history-option-",
+    primary: "replace",
+  },
+};
+
+/** Which dropdown is open ("find" | "replace" | null). */
+let openHistoryKey = null;
+/** Index of the active option in the open dropdown, or -1 for none. */
+let activeHistoryIndex = -1;
+/**
+ * Set while a selection is moving focus back to the input, so the focus
+ * handler does not immediately reopen the dropdown the selection just closed.
+ */
+let suppressHistoryOpen = false;
+/**
+ * The field whose dropdown was just opened by a `focus` event, so the `click`
+ * that produced that focus does not immediately toggle it closed again.
+ */
+let openedByFocusKey = null;
+
+/**
+ * A short, human-readable summary of the option flags an entry carries, or ""
+ * when it carries none. This is the part that makes a remembered entry
+ * trustworthy: the same find string with `regex` on and off are two different
+ * searches, and the row has to show which one you are about to restore.
+ * @param {ReturnType<typeof normalizeHistoryEntry>} item
+ */
+function historyFlagSummary(item) {
+  const parts = [];
+  if (item.options.regex) parts.push("regex");
+  if (item.options.matchCase) parts.push("case");
+  if (item.options.wholeWord) parts.push("word");
+  if (item.options.includeIframes) parts.push("iframes");
+  return parts.join(" · ");
+}
+
+/**
+ * Build the option rows for one dropdown from the current historyEntries.
+ * Rebuilt on every open rather than kept in sync incrementally - the list is
+ * bounded at 20, so there is nothing to gain from being clever, and a stale
+ * row would show the user a search they can no longer select.
+ *
+ * Pinned by "reopening the dropdown shows entries recorded since it was last
+ * open" and "a cleared-then-repopulated list renders the new rows, not the old
+ * ones" in test/history-dropdown.spec.js. Those exist because a gate cached the
+ * render on reopen and found all 33 tests still passing: every other
+ * post-mutation assertion read storage.local rather than the rendered rows, so
+ * nothing would have noticed the list going stale on screen.
+ * @param {typeof historyUi.find} ui
+ */
+function renderHistoryOptions(ui) {
+  // Clear existing rows without touching innerHTML.
+  while (ui.listbox.firstChild) {
+    ui.listbox.removeChild(ui.listbox.firstChild);
+  }
+
+  historyEntries.forEach((item, index) => {
+    const leading = ui.primary === "find" ? item.find : item.replace;
+    const trailing = ui.primary === "find" ? item.replace : item.find;
+
+    const row = document.createElement("li");
+    row.id = ui.optionIdPrefix + index;
+    row.dataset.testid = ui.optionIdPrefix + index;
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", "false");
+    row.dataset.historyIndex = String(index);
+    row.className = "history-option";
+
+    const primaryEl = document.createElement("span");
+    primaryEl.className = "history-option-primary";
+    // textContent, so an angle bracket in a remembered value stays an angle
+    // bracket the user can read rather than becoming an element.
+    primaryEl.textContent = leading === "" ? "(empty)" : leading;
+    row.appendChild(primaryEl);
+
+    const arrow = document.createElement("span");
+    arrow.className = "history-option-arrow";
+    arrow.textContent = ui.primary === "find" ? " → " : " ← ";
+    row.appendChild(arrow);
+
+    const secondaryEl = document.createElement("span");
+    secondaryEl.className = "history-option-secondary";
+    secondaryEl.textContent = trailing === "" ? "(empty)" : trailing;
+    row.appendChild(secondaryEl);
+
+    const flags = historyFlagSummary(item);
+    if (flags) {
+      const flagsEl = document.createElement("span");
+      flagsEl.className = "history-option-flags";
+      flagsEl.textContent = flags;
+      row.appendChild(flagsEl);
+    }
+
+    ui.listbox.appendChild(row);
+  });
+}
+
+/** Reflect activeHistoryIndex into the DOM (aria-activedescendant + class). */
+function renderActiveHistoryOption() {
+  if (!openHistoryKey) {
+    return;
+  }
+  const ui = historyUi[openHistoryKey];
+  const rows = Array.from(ui.listbox.children);
+
+  rows.forEach((row, index) => {
+    const isActive = index === activeHistoryIndex;
+    row.classList.toggle("is-active", isActive);
+    row.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+
+  if (activeHistoryIndex >= 0 && rows[activeHistoryIndex]) {
+    ui.input.setAttribute("aria-activedescendant", rows[activeHistoryIndex].id);
+    // Keep the active row in view when the list is longer than the overlay.
+    if (typeof rows[activeHistoryIndex].scrollIntoView === "function") {
+      rows[activeHistoryIndex].scrollIntoView({ block: "nearest" });
+    }
+  } else {
+    ui.input.removeAttribute("aria-activedescendant");
+  }
+}
+
+/**
+ * Open one dropdown. A no-op when there is nothing remembered: an empty
+ * listbox announced to a screen reader as a listbox would be worse than no
+ * listbox, and there is nothing to click.
+ * @param {"find"|"replace"} key
+ */
+function openHistoryDropdown(key) {
+  if (suppressHistoryOpen) {
+    return;
+  }
+  if (historyEntries.length === 0) {
+    return;
+  }
+  if (openHistoryKey && openHistoryKey !== key) {
+    closeHistoryDropdown();
+  }
+
+  const ui = historyUi[key];
+  renderHistoryOptions(ui);
+  ui.overlay.hidden = false;
+  ui.input.setAttribute("aria-expanded", "true");
+  openHistoryKey = key;
+  activeHistoryIndex = -1;
+  renderActiveHistoryOption();
+}
+
+/** Close whichever dropdown is open. Safe to call when none is. */
+function closeHistoryDropdown() {
+  if (!openHistoryKey) {
+    return;
+  }
+  const ui = historyUi[openHistoryKey];
+  ui.overlay.hidden = true;
+  ui.input.setAttribute("aria-expanded", "false");
+  ui.input.removeAttribute("aria-activedescendant");
+  openHistoryKey = null;
+  activeHistoryIndex = -1;
+}
+
+/**
+ * Move the active option by `delta`, wrapping at both ends. Wrapping is the
+ * behaviour a keyboard user expects from a short list, and ArrowUp from the
+ * closed/none state landing on the LAST entry is how you reach the oldest
+ * remembered search in one keystroke.
+ * @param {number} delta
+ */
+function moveActiveHistoryOption(delta) {
+  if (!openHistoryKey) {
+    return;
+  }
+  const count = historyEntries.length;
+  if (count === 0) {
+    return;
+  }
+  if (activeHistoryIndex < 0) {
+    activeHistoryIndex = delta > 0 ? 0 : count - 1;
+  } else {
+    activeHistoryIndex = (activeHistoryIndex + delta + count) % count;
+  }
+  renderActiveHistoryOption();
+}
+
+/**
+ * Restore a remembered entry into the form, in full.
+ *
+ * "In full" is the whole point: find, replace, all four option flags and every
+ * field-type checkbox. Restoring the strings without the flags would hand the
+ * user a regex source with regex switched off, which searches for it literally
+ * and reports no matches - a silent wrong answer rather than an error.
+ *
+ * Reuses applyState() rather than assigning the controls a second time here,
+ * so there is exactly one place in this file that knows how to put a state
+ * object into the form.
+ * @param {number} index
+ */
+function selectHistoryEntry(index) {
+  const item = historyEntries[index];
+  if (!item) {
+    return;
+  }
+
+  applyState({
+    find: item.find,
+    replace: item.replace,
+    options: item.options,
+    fieldTypes: item.fieldTypes,
+  });
+
+  // Selecting an entry is a use of it, so it becomes the most recent. This is
+  // what makes the ordering genuinely usage-based rather than merely
+  // record-based - see README.md's note on why the docs say "newest-first".
+  historyEntries = [item, ...historyEntries.filter((e) => e !== item)];
+  persistHistory();
+
+  // The restored values are now the current state, so persist them as such.
+  persistState();
+  updatePreview();
+
+  const key = openHistoryKey;
+  closeHistoryDropdown();
+
+  // Put focus back where the user was, without the focus handler treating that
+  // as a fresh request to open the list again.
+  if (key) {
+    suppressHistoryOpen = true;
+    historyUi[key].input.focus();
+    suppressHistoryOpen = false;
+  }
+}
+
+/**
+ * Keydown handling for a combobox input. Returns true when the event was
+ * consumed by the dropdown, so the caller knows not to let it fall through.
+ * @param {"find"|"replace"} key
+ * @param {KeyboardEvent} event
+ */
+function handleHistoryKeydown(key, event) {
+  const isOpen = openHistoryKey === key;
+
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (!isOpen) {
+      openHistoryDropdown(key);
+      // Opening on ArrowDown should also land on the first entry, otherwise
+      // the keystroke appears to do nothing on a list the user cannot see yet.
+      if (openHistoryKey === key) {
+        moveActiveHistoryOption(event.key === "ArrowDown" ? 1 : -1);
+      }
+    } else {
+      moveActiveHistoryOption(event.key === "ArrowDown" ? 1 : -1);
+    }
+    event.preventDefault();
+    return true;
+  }
+
+  if (!isOpen) {
+    return false;
+  }
+
+  if (event.key === "Enter") {
+    if (activeHistoryIndex >= 0) {
+      selectHistoryEntry(activeHistoryIndex);
+      event.preventDefault();
+      return true;
+    }
+    // Open but nothing chosen: close and let Enter mean what it normally
+    // means (run Replace all) rather than swallowing it.
+    closeHistoryDropdown();
+    return false;
+  }
+
+  if (event.key === "Escape") {
+    // The FIRST Escape belongs to the dropdown. The document-level handler
+    // would otherwise cancel a run or close the popup outright, throwing away
+    // everything the user had typed just because they dismissed a list.
+    // stopPropagation is what keeps it from getting there.
+    closeHistoryDropdown();
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  }
+
+  if (event.key === "Tab") {
+    closeHistoryDropdown();
+    return false;
+  }
+
+  return false;
 }
 
 // ---- Status / progress helpers -----------------------------------------
@@ -925,6 +1277,85 @@ function wireEvents() {
   for (const el of previewOnChange) {
     el.addEventListener("change", schedulePreviewUpdate);
   }
+
+  // ---- History dropdowns ----
+  //
+  // Wired here, inside wireEvents, which init() calls only AFTER the remembered
+  // list has been read. That ordering is not incidental - see init().
+  for (const key of ["find", "replace"]) {
+    const ui = historyUi[key];
+
+    // Clicking an UNFOCUSED input fires focus first and click second. Without
+    // the flag below, focus opened the dropdown and the click that caused it
+    // immediately toggled it shut again - so a single click appeared to do
+    // nothing at all. The flag makes the first click after a focus-open a
+    // no-op, and every click after that a real toggle.
+    ui.input.addEventListener("focus", () => {
+      const wasOpen = openHistoryKey === key;
+      openHistoryDropdown(key);
+      openedByFocusKey = !wasOpen && openHistoryKey === key ? key : null;
+    });
+
+    ui.input.addEventListener("click", () => {
+      if (openedByFocusKey === key) {
+        openedByFocusKey = null;
+        return;
+      }
+      if (openHistoryKey === key) {
+        closeHistoryDropdown();
+      } else {
+        openHistoryDropdown(key);
+      }
+    });
+
+    ui.input.addEventListener("keydown", (event) => {
+      handleHistoryKeydown(key, event);
+    });
+
+    // Rows are created and destroyed on every open, so the listener lives on
+    // the listbox and reads the index off the row - not one listener per row.
+    ui.listbox.addEventListener("click", (event) => {
+      const row = event.target.closest("[data-history-index]");
+      if (!row) {
+        return;
+      }
+      selectHistoryEntry(Number(row.dataset.historyIndex));
+    });
+
+    // Keep the input focused when the user presses the mouse on a ROW, so the
+    // blur does not tear the list down before the click can land on anything.
+    //
+    // Scoped to the listbox, and to rows within it, deliberately. An earlier
+    // version bound this to the whole overlay, which made it a
+    // preventDefault() sitting across a region that overlaps the option
+    // checkboxes below - and under parallel-test contention that produced
+    // clicks on "Regular expression" that focused the checkbox without
+    // toggling it. A guard wide enough to swallow input meant for other
+    // controls is worse than the blur it was preventing.
+    ui.listbox.addEventListener("mousedown", (event) => {
+      if (event.target.closest("[data-history-index]")) {
+        event.preventDefault();
+      }
+    });
+
+    ui.clearBtn.addEventListener("click", () => {
+      clearHistory();
+      closeHistoryDropdown();
+      setStatus("Remembered searches cleared.");
+    });
+  }
+
+  // A click anywhere outside an open dropdown dismisses it, leaving whatever
+  // the user had typed untouched.
+  document.addEventListener("click", (event) => {
+    if (!openHistoryKey) {
+      return;
+    }
+    const combo = historyUi[openHistoryKey].input.closest(".combo");
+    if (combo && !combo.contains(event.target)) {
+      closeHistoryDropdown();
+    }
+  });
 
   // Escape cancels an in-flight run, otherwise closes the popup.
   document.addEventListener("keydown", (event) => {

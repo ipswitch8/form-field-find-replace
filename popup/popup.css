@@ -91,19 +91,174 @@ a:focus-visible {
   outline-offset: 1px;
 }
 
+/*
+ * History dropdown.
+ *
+ * `position: absolute` on the overlay is a REQUIREMENT, not a style choice.
+ * The popup has to show every element without vertical scrolling, and an
+ * in-flow dropdown would add its own height to the document the moment it
+ * opened - breaking the fit in exactly the state where the user is
+ * mid-interaction. Out of flow means opening it cannot change
+ * document.documentElement.scrollHeight at all, which a test asserts for the
+ * worst case (field types expanded AND a dropdown open).
+ *
+ * See README.md, "Why the dropdown is an absolutely-positioned overlay".
+ */
+.combo {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-overlay {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin-top: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.history-overlay[hidden] {
+  display: none;
+}
+
+#find-history-listbox,
+#replace-history-listbox {
+  list-style: none;
+  margin: 0;
+  padding: 2px;
+  /* Bounded so a full 20-entry list cannot run off the bottom of the popup;
+     the list scrolls inside the overlay instead. */
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.history-option {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.history-option:hover,
+.history-option.is-active {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.history-option-primary {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+
+.history-option-arrow {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.history-option.is-active .history-option-arrow,
+.history-option:hover .history-option-arrow,
+.history-option.is-active .history-option-secondary,
+.history-option:hover .history-option-secondary,
+.history-option.is-active .history-option-flags,
+.history-option:hover .history-option-flags {
+  color: inherit;
+}
+
+.history-option-secondary {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+
+.history-option-flags {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.history-clear {
+  display: block;
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--group-bg);
+  padding: 5px 8px;
+  font-size: 11.5px;
+  text-align: left;
+  color: var(--muted);
+}
+
+.history-clear:hover {
+  color: var(--danger);
+}
+
 #match-preview-row {
   margin-bottom: 10px;
 }
 
+/*
+ * FIXED height, not min-height. The preview is recomputed on a 200ms debounce
+ * after typing, and its text varies from "" to a wrapped two-line
+ * substitution or a regex error message. With min-height the box grew when
+ * that text arrived, shifting every control below it - the whole Options
+ * fieldset and the field-type checkboxes - a fifth of a second after the user
+ * stopped typing.
+ *
+ * That is a real interaction bug on its own terms: a click aimed at a checkbox
+ * can land on the wrong one, or on nothing, because the target moved between
+ * aim and press - the kind of race a user loses occasionally and blames on
+ * themselves. This box is fixed-height because of THAT, and it is justified by
+ * that alone.
+ *
+ * WHAT IS NOT CLAIMED: the suite also had an intermittent
+ * `setChecked: Clicking the checkbox did not change its state` failure under
+ * parallel workers, and this looked like a likely cause. It is NOT established
+ * as one. Reverting to min-height and re-running --repeat-each=2 --workers=6
+ * gave 242 passed / 0 failed - the flake did not reproduce, so this change is
+ * not demonstrated to have cured it. See
+ * .claude/pipelines/history-dropdown/gate-artifacts/phase-3/SCOPING-EVIDENCE.md
+ * for the full numbers. Do not treat that flake as solved on the strength of
+ * this rule.
+ *
+ * So the box reserves its space up front and never changes size. Two lines'
+ * worth; longer content is clipped rather than allowed to push the layout
+ * around. The full text stays available via the title attribute
+ * popup.js's setPreviewText() sets - asserted by "the preview box exposes its
+ * full text on title, because it now clips" in test/history-dropdown.spec.js,
+ * and the no-reflow property itself by "the preview box does not change height
+ * when its text arrives" in the same file.
+ */
 #match-preview {
   display: block;
-  min-height: 1.2em;
+  height: calc(2 * 1.35em + 8px);
   padding: 4px 6px;
   border: 1px dashed var(--border);
   border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 12px;
+  line-height: 1.35;
   word-break: break-word;
+  overflow: hidden;
   color: var(--fg);
 }
 

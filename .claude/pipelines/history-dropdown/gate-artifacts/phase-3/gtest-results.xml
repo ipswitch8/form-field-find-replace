@@ -1,0 +1,364 @@
+<testsuites id="" name="" tests="125" failures="0" skipped="0" errors="0" time="51.528938000000004">
+<testsuite name="activation.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="4" failures="0" skipped="0" time="12.304" errors="0">
+<testcase name="activation wiring: content script injection is popup-driven › when ping rejects, popup init injects the content script with the correct tabId and file" classname="activation.spec.js" time="2.024">
+</testcase>
+<testcase name="activation wiring: content script injection is popup-driven › when ping resolves, popup init does NOT re-inject the content script (preserves undo state)" classname="activation.spec.js" time="2.762">
+</testcase>
+<testcase name="activation wiring: sendToContentScript inject-and-retry › a rejected send triggers exactly one injection and one retry, whose response is used" classname="activation.spec.js" time="2.806">
+</testcase>
+<testcase name="activation wiring: sendToContentScript inject-and-retry › a page that cannot be scripted surfaces a friendly status and never throws" classname="activation.spec.js" time="4.712">
+</testcase>
+</testsuite>
+<testsuite name="backreferences.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="11" failures="0" skipped="0" time="23.908" errors="0">
+<testcase name="phase 4: literal-dollar escaping in plain mode › finding/replacing literal text containing &apos;$5.00&apos; produces exactly &apos;$5.00&apos; unmangled" classname="backreferences.spec.js" time="4.94">
+</testcase>
+<testcase name="phase 4: literal-dollar escaping in plain mode › plain mode treats $&amp; as literal text, never the whole-match token" classname="backreferences.spec.js" time="5.752">
+</testcase>
+<testcase name="phase 4: full substitution grammar in regex mode › supports numbered capture groups ($1, $2, ...)" classname="backreferences.spec.js" time="4.979">
+</testcase>
+<testcase name="phase 4: full substitution grammar in regex mode › supports named capture groups ($&lt;name&gt;) paired with (?&lt;name&gt;...)" classname="backreferences.spec.js" time="0.824">
+</testcase>
+<testcase name="phase 4: full substitution grammar in regex mode › supports $&amp; (whole match)" classname="backreferences.spec.js" time="0.87">
+</testcase>
+<testcase name="phase 4: full substitution grammar in regex mode › supports $` (text before the match)" classname="backreferences.spec.js" time="0.846">
+</testcase>
+<testcase name="phase 4: full substitution grammar in regex mode › supports $&apos; (text after the match)" classname="backreferences.spec.js" time="0.818">
+</testcase>
+<testcase name="phase 4: full substitution grammar in regex mode › supports $$ (literal dollar sign)" classname="backreferences.spec.js" time="1.053">
+</testcase>
+<testcase name="phase 4: backreference validation blocks the replace run › a valid backreference within the pattern&apos;s actual group count is NOT blocked" classname="backreferences.spec.js" time="1.094">
+</testcase>
+<testcase name="phase 4: backreference validation blocks the replace run › a numbered backreference beyond the pattern&apos;s group count blocks the run without touching or firing events on ANY field" classname="backreferences.spec.js" time="1.765">
+</testcase>
+<testcase name="phase 4: backreference validation blocks the replace run › a named backreference with no matching declared group blocks the run" classname="backreferences.spec.js" time="0.967">
+</testcase>
+</testsuite>
+<testsuite name="bulk-fixture.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="1" failures="0" skipped="0" time="1.758" errors="0">
+<testcase name="fixture-bulk.html (phase 2 smoke coverage) › generates exactly 5000 inputs with a declared expected match count" classname="bulk-fixture.spec.js" time="1.758">
+</testcase>
+</testsuite>
+<testsuite name="chunked-progress.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="8" failures="0" skipped="0" time="12.985" errors="0">
+<testcase name="phase 5: chunked replace loop against fixture-bulk.html (5,000 fields) › (a) a full replace run reports the pre-seeded match count" classname="chunked-progress.spec.js" time="1.905">
+</testcase>
+<testcase name="phase 5: chunked replace loop against fixture-bulk.html (5,000 fields) › (b) received progress messages show monotonically increasing `done` values" classname="chunked-progress.spec.js" time="1.892">
+</testcase>
+<testcase name="phase 5: chunked replace loop against fixture-bulk.html (5,000 fields) › (c) cancelling mid-run halts further replacement and reports a partial count strictly less than the total" classname="chunked-progress.spec.js" time="1.637">
+</testcase>
+<testcase name="phase 5: chunked replace loop against fixture-bulk.html (5,000 fields) › (d) undo snapshots are capped, and disabled for a run exceeding the cap" classname="chunked-progress.spec.js" time="1.763">
+</testcase>
+<testcase name="phase 5: chunked replace loop against fixture-bulk.html (5,000 fields) › (d) undo snapshot is built (and not capped) for a run within the cap" classname="chunked-progress.spec.js" time="1.805">
+</testcase>
+<testcase name="phase 5: chunked replace loop against fixture-bulk.html (5,000 fields) › (d) handleCount reports totalFields independent of match count, for the popup&apos;s pre-run undo warning" classname="chunked-progress.spec.js" time="1.583">
+</testcase>
+<testcase name="phase 5: catastrophic-backtracking per-field time budget › a field whose matching takes over the time budget is reported as timedOut, not replaced or skipped" classname="chunked-progress.spec.js" time="1.842">
+</testcase>
+<testcase name="phase 5: regex lastIndex reset across fields (regression guard) › (e) a field with multiple matches has ALL of them replaced, and a short field immediately after a long matching field is not skipped" classname="chunked-progress.spec.js" time="0.558">
+</testcase>
+</testsuite>
+<testsuite name="collect-fields.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="5" failures="0" skipped="0" time="5.824" errors="0">
+<testcase name="collectFields (phase 2) › finds exactly the non-skipped fields in fixture.html" classname="collect-fields.spec.js" time="1.074">
+</testcase>
+<testcase name="collectFields (phase 2) › resolves a missing/unrecognized input type to &apos;text&apos;" classname="collect-fields.spec.js" time="1.005">
+</testcase>
+<testcase name="collectFields (phase 2) › count action returns matches and fields without mutating anything" classname="collect-fields.spec.js" time="1.324">
+</testcase>
+<testcase name="collectFields (phase 2) › field-type filtering excludes unchecked groups before counting" classname="collect-fields.spec.js" time="1.276">
+</testcase>
+<testcase name="collectFields (phase 2) › isValidMessage rejects malformed messages" classname="collect-fields.spec.js" time="1.145">
+</testcase>
+</testsuite>
+<testsuite name="find-replace.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="8" failures="0" skipped="0" time="12.606" errors="0">
+<testcase name="replace path (phase 3) › replace against the controlled-input widget updates its displayed value via the native-setter path" classname="find-replace.spec.js" time="1.151">
+</testcase>
+<testcase name="replace path (phase 3) › a date-field replace producing an invalid value is rolled back to the original value, not blanked" classname="find-replace.spec.js" time="3.191">
+</testcase>
+<testcase name="replace path (phase 3) › a field with no match is left completely untouched - no input/change events fired" classname="find-replace.spec.js" time="1.179">
+</testcase>
+<testcase name="replace path (phase 3) › count and replace share the same matcher - matches agree for the same query" classname="find-replace.spec.js" time="1.131">
+</testcase>
+<testcase name="replace path (phase 3) › regex mode compile errors are returned via the error field, not thrown" classname="find-replace.spec.js" time="1.094">
+</testcase>
+<testcase name="replace path (phase 3) › whole-word mode only replaces whole-word matches" classname="find-replace.spec.js" time="1.016">
+</testcase>
+<testcase name="replace path (phase 3) › contenteditable replacement walks text nodes and preserves nested markup" classname="find-replace.spec.js" time="2.782">
+</testcase>
+<testcase name="replace path (phase 3) › a destructive replace never touches password, hidden or file fields" classname="find-replace.spec.js" time="1.062">
+</testcase>
+</testsuite>
+<testsuite name="history-dropdown.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="37" failures="0" skipped="0" time="53.324" errors="0">
+<testcase name="history persistence › Replace all records a paired entry carrying find, replace, options and fieldTypes" classname="history-dropdown.spec.js" time="1.752">
+</testcase>
+<testcase name="history persistence › Count matches also records an entry (it is the rehearsal for a replace)" classname="history-dropdown.spec.js" time="3.245">
+</testcase>
+<testcase name="history persistence › history is stored under its own key, leaving the last-typed-state key intact" classname="history-dropdown.spec.js" time="1.438">
+</testcase>
+<testcase name="history persistence › typing alone records nothing - only an invoked action does" classname="history-dropdown.spec.js" time="2.686">
+</testcase>
+<testcase name="history persistence › history is persisted through storage.local only, never storage.sync" classname="history-dropdown.spec.js" time="1.421">
+</testcase>
+<testcase name="history persistence › an empty find value is never recorded" classname="history-dropdown.spec.js" time="1.101">
+</testcase>
+<testcase name="history bound › the list is capped at 20, evicting the least recently used" classname="history-dropdown.spec.js" time="1.169">
+</testcase>
+<testcase name="history bound › re-running an identical search moves it to the front instead of duplicating it" classname="history-dropdown.spec.js" time="1.191">
+</testcase>
+<testcase name="history bound › the same find with different settings is a distinct entry, not a duplicate" classname="history-dropdown.spec.js" time="1.385">
+</testcase>
+<testcase name="claimed mechanisms, actually pinned › a slow earlier history write cannot clobber a newer one (historyWriteChain)" classname="history-dropdown.spec.js" time="1.472">
+</testcase>
+<testcase name="claimed mechanisms, actually pinned › an action fired before init() finishes cannot truncate the stored history" classname="history-dropdown.spec.js" time="1.125">
+</testcase>
+<testcase name="claimed mechanisms, actually pinned › no action handler is attached until the readiness marker is set (why the marker exists)" classname="history-dropdown.spec.js" time="1.326">
+</testcase>
+<testcase name="claimed mechanisms, actually pinned › the preview box exposes its full text on title, because it now clips" classname="history-dropdown.spec.js" time="1.707">
+</testcase>
+<testcase name="claimed mechanisms, actually pinned › the preview box does not change height when its text arrives" classname="history-dropdown.spec.js" time="1.103">
+</testcase>
+<testcase name="claimed mechanisms, actually pinned › malformed stored history is coerced, not thrown on (normalizeHistoryEntry)" classname="history-dropdown.spec.js" time="1.191">
+</testcase>
+<testcase name="history dropdown rendering › clicking the find input opens a listbox of prior entries" classname="history-dropdown.spec.js" time="0.992">
+</testcase>
+<testcase name="history dropdown rendering › the replace input opens its own listbox over the same shared entries" classname="history-dropdown.spec.js" time="0.99">
+</testcase>
+<testcase name="history dropdown rendering › the inputs are wired as ARIA comboboxes pointing at their listboxes" classname="history-dropdown.spec.js" time="0.999">
+</testcase>
+<testcase name="history dropdown rendering › no listbox is shown when there is no history to show" classname="history-dropdown.spec.js" time="0.98">
+</testcase>
+<testcase name="history dropdown rendering › rows are built as elements, not parsed from markup" classname="history-dropdown.spec.js" time="0.946">
+</testcase>
+<testcase name="selecting a history entry › clicking an entry restores find, replace, every option and the field types" classname="history-dropdown.spec.js" time="1.28">
+</testcase>
+<testcase name="selecting a history entry › ArrowDown then Enter restores the same entry by keyboard alone" classname="history-dropdown.spec.js" time="1.179">
+</testcase>
+<testcase name="selecting a history entry › ArrowDown twice reaches the second entry" classname="history-dropdown.spec.js" time="1.146">
+</testcase>
+<testcase name="selecting a history entry › ArrowUp from the first option wraps to the last" classname="history-dropdown.spec.js" time="0.939">
+</testcase>
+<testcase name="selecting a history entry › selecting from the replace dropdown restores the same full tuple" classname="history-dropdown.spec.js" time="1.2">
+</testcase>
+<testcase name="selecting a history entry › a restored entry is persisted as the new last-typed state" classname="history-dropdown.spec.js" time="1.22">
+</testcase>
+<testcase name="promotion and clearing › selecting an entry promotes it to the front of the remembered list" classname="history-dropdown.spec.js" time="1.198">
+</testcase>
+<testcase name="promotion and clearing › Clear history empties the remembered list and closes the dropdown" classname="history-dropdown.spec.js" time="1.433">
+</testcase>
+<testcase name="promotion and clearing › clearing does not disturb the current find/replace boxes or options" classname="history-dropdown.spec.js" time="1.512">
+</testcase>
+<testcase name="promotion and clearing › reopening the dropdown shows entries recorded since it was last open" classname="history-dropdown.spec.js" time="1.647">
+</testcase>
+<testcase name="promotion and clearing › a cleared-then-repopulated list renders the new rows, not the old ones" classname="history-dropdown.spec.js" time="1.567">
+</testcase>
+<testcase name="promotion and clearing › the flags an entry carries are shown on its row" classname="history-dropdown.spec.js" time="0.995">
+</testcase>
+<testcase name="dropdown interaction safety › Escape closes the dropdown without closing the popup" classname="history-dropdown.spec.js" time="3.133">
+</testcase>
+<testcase name="dropdown interaction safety › an option checkbox still toggles when a dropdown is open over it" classname="history-dropdown.spec.js" time="1.228">
+</testcase>
+<testcase name="dropdown interaction safety › clicking a row still selects it, despite the mousedown guard being scoped" classname="history-dropdown.spec.js" time="1.184">
+</testcase>
+<testcase name="dropdown interaction safety › clicking outside closes the dropdown and leaves the input untouched" classname="history-dropdown.spec.js" time="1.219">
+</testcase>
+<testcase name="dropdown interaction safety › opening the dropdown immediately after mount never blanks the restored value" classname="history-dropdown.spec.js" time="3.025">
+</testcase>
+</testsuite>
+<testsuite name="listener-registration.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="4" failures="0" skipped="0" time="3.692" errors="0">
+<testcase name="message listener registration guard (phase 4) › does not register on an extension page even when the runtime API exists" classname="listener-registration.spec.js" time="0.913">
+</testcase>
+<testcase name="message listener registration guard (phase 4) › does register on ordinary page schemes when the runtime API exists" classname="listener-registration.spec.js" time="0.944">
+</testcase>
+<testcase name="message listener registration guard (phase 4) › does not register when the runtime API is absent or incomplete" classname="listener-registration.spec.js" time="0.928">
+</testcase>
+<testcase name="message listener registration guard (phase 4) › a stubbed runtime API on a file:// page really receives an addListener call" classname="listener-registration.spec.js" time="0.907">
+</testcase>
+</testsuite>
+<testsuite name="popup-undo-desync.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="6" failures="0" skipped="0" time="10.695" errors="0">
+<testcase name="popup undo desync (data-loss regression) › an undo that restored nothing must NOT be reported as success" classname="popup-undo-desync.spec.js" time="1.187">
+</testcase>
+<testcase name="popup undo desync (data-loss regression) › an undo that restored nothing must not leave the UI claiming it succeeded" classname="popup-undo-desync.spec.js" time="3.034">
+</testcase>
+<testcase name="popup undo desync (data-loss regression) › Undo is available after the popup is reopened while a snapshot still exists" classname="popup-undo-desync.spec.js" time="3.117">
+</testcase>
+<testcase name="popup undo desync (data-loss regression) › Count resyncs the Undo button OFF when the snapshot has since been lost" classname="popup-undo-desync.spec.js" time="1.237">
+</testcase>
+<testcase name="popup undo desync (data-loss regression) › Count resyncs the Undo button ON when a snapshot exists the popup did not know about" classname="popup-undo-desync.spec.js" time="1.18">
+</testcase>
+<testcase name="popup undo desync (data-loss regression) › Undo stays disabled after reopen when the content script really has no snapshot" classname="popup-undo-desync.spec.js" time="0.94">
+</testcase>
+</testsuite>
+<testsuite name="preview.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="8" failures="0" skipped="0" time="10.413" errors="0">
+<testcase name="phase 4: live first-match preview › computeFirstMatchPreview is exposed via the shared content-script matcher, loaded by popup.html" classname="preview.spec.js" time="0.811">
+</testcase>
+<testcase name="phase 4: live first-match preview › an empty find field shows no preview text" classname="preview.spec.js" time="1.332">
+</testcase>
+<testcase name="phase 4: live first-match preview › plain-mode typing updates the preview (debounced) with the substituted sample text" classname="preview.spec.js" time="1.28">
+</testcase>
+<testcase name="phase 4: live first-match preview › a find string with no match in the sample text is reported as no match" classname="preview.spec.js" time="1.27">
+</testcase>
+<testcase name="phase 4: live first-match preview › an invalid regex is reported as an error, not thrown" classname="preview.spec.js" time="1.559">
+</testcase>
+<testcase name="phase 4: live first-match preview › regex mode preview reflects numbered capture-group substitution using the shared matcher" classname="preview.spec.js" time="1.327">
+</testcase>
+<testcase name="phase 4: live first-match preview › a backreference/group mismatch surfaces as an error in the preview before Replace all is ever run" classname="preview.spec.js" time="1.354">
+</testcase>
+<testcase name="phase 4: live first-match preview › rapid keystrokes are debounced - preview does not thrash and settles on the final input" classname="preview.spec.js" time="1.48">
+</testcase>
+</testsuite>
+<testsuite name="repro-sequence.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="4" failures="0" skipped="0" time="4.069" errors="0">
+<testcase name="REPRO: replace -&gt; undo -&gt; replace › input field survives a second replace after undo" classname="repro-sequence.spec.js" time="0.993">
+<system-out>
+<![CDATA[INPUT TRACE: {
+  "start": "hello world hello",
+  "afterReplace1": "HELLO world HELLO",
+  "r1": {
+    "ok": true,
+    "replaced": 4,
+    "matches": 7
+  },
+  "afterUndo": "hello world hello",
+  "u1": {
+    "ok": true,
+    "restored": 4
+  },
+  "afterReplace2": "HELLO world HELLO",
+  "r2": {
+    "ok": true,
+    "replaced": 4,
+    "matches": 7
+  }
+}
+]]>
+</system-out>
+</testcase>
+<testcase name="REPRO: replace -&gt; undo -&gt; replace › contenteditable survives a second replace after undo" classname="repro-sequence.spec.js" time="0.943">
+<system-out>
+<![CDATA[CONTENTEDITABLE TRACE: {
+  "start": {
+    "text": "hello world hello there",
+    "html": "<b>hello</b> world <span>hello there</span>",
+    "b": true,
+    "span": true
+  },
+  "afterReplace1": {
+    "text": "HELLO world HELLO there",
+    "html": "<b>HELLO</b> world <span>HELLO there</span>",
+    "b": true,
+    "span": true
+  },
+  "r1": {
+    "replaced": 4
+  },
+  "afterUndo": {
+    "text": "hello world hello there",
+    "html": "<b>hello</b> world <span>hello there</span>",
+    "b": true,
+    "span": true
+  },
+  "afterReplace2": {
+    "text": "HELLO world HELLO there",
+    "html": "<b>HELLO</b> world <span>HELLO there</span>",
+    "b": true,
+    "span": true
+  },
+  "r2": {
+    "replaced": 4
+  }
+}
+]]>
+</system-out>
+</testcase>
+<testcase name="REPRO: replace -&gt; undo -&gt; replace › handleUndo reports ok:true with restored:0 when the snapshot is empty" classname="repro-sequence.spec.js" time="1.017">
+</testcase>
+<testcase name="REPRO: replace -&gt; undo -&gt; replace › three replaces in a row without undo keep compounding correctly" classname="repro-sequence.spec.js" time="1.116">
+<system-out>
+<![CDATA[REPEAT TRACE: {
+  "start": "hello world hello",
+  "steps": [
+    {
+      "i": 0,
+      "value": "HELLO world HELLO",
+      "replaced": 4,
+      "matches": 7
+    },
+    {
+      "i": 1,
+      "value": "HELLO world HELLO",
+      "replaced": 0,
+      "matches": 7
+    },
+    {
+      "i": 2,
+      "value": "HELLO world HELLO",
+      "replaced": 0,
+      "matches": 7
+    }
+  ]
+}
+]]>
+</system-out>
+</testcase>
+</testsuite>
+<testsuite name="shadow-iframe.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="8" failures="0" skipped="0" time="8.841" errors="0">
+<testcase name="phase 6: shadow DOM and iframe traversal › a shadow-root field is found and correctly replaced" classname="shadow-iframe.spec.js" time="1.021">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › closed shadow roots are skipped without error" classname="shadow-iframe.spec.js" time="1.065">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › a same-origin iframe field is NOT found when include-iframes is unchecked" classname="shadow-iframe.spec.js" time="1.281">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › a same-origin iframe field is found and correctly replaced when include-iframes is checked - exercising the cross-document constructor path" classname="shadow-iframe.spec.js" time="0.99">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › collectFields directly: includeIframes toggles whether the iframe field is enumerated at all" classname="shadow-iframe.spec.js" time="1.157">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › the cross-origin iframe causes no thrown error and does not abort the run, even with include-iframes checked" classname="shadow-iframe.spec.js" time="1.079">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › password fields nested in a shadow root and a same-origin iframe are never collected or touched" classname="shadow-iframe.spec.js" time="1.121">
+</testcase>
+<testcase name="phase 6: shadow DOM and iframe traversal › a frame whose contentDocument getter THROWS is skipped quietly and the run continues" classname="shadow-iframe.spec.js" time="1.127">
+</testcase>
+</testsuite>
+<testsuite name="undo.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="8" failures="0" skipped="0" time="12.083" errors="0">
+<testcase name="phase 7: undo - full run restores everything › full-run undo restores all changed fields, including contenteditable nested markup" classname="undo.spec.js" time="0.982">
+</testcase>
+<testcase name="phase 7: undo - full run restores everything › full-run undo restores a field inside an open shadow root and a same-origin iframe (cross-realm prototype path)" classname="undo.spec.js" time="1.137">
+</testcase>
+<testcase name="phase 7: undo - full run restores everything › a second replace run replaces the snapshot rather than stacking (one level only)" classname="undo.spec.js" time="1.017">
+</testcase>
+<testcase name="phase 7: undo - partial (cancelled) run › undo after a cancelled run restores exactly the changed subset; untouched fields receive no events" classname="undo.spec.js" time="2.161">
+</testcase>
+<testcase name="phase 7: undo - partial (cancelled) run › undo restores a controlled input through the native-setter path, not a plain assignment" classname="undo.spec.js" time="1.109">
+</testcase>
+<testcase name="phase 7: undo - popup wiring (Undo button enabled/disabled transitions) › Undo button transitions correctly across a replace run -&gt; cancel -&gt; undo cycle" classname="undo.spec.js" time="3.614">
+</testcase>
+<testcase name="phase 7: undo - popup wiring (Undo button enabled/disabled transitions) › a completed run with zero changed fields leaves Undo disabled" classname="undo.spec.js" time="1.247">
+</testcase>
+<testcase name="phase 7: UI text states one level of undo is supported › popup.html contains text stating one level of undo is supported" classname="undo.spec.js" time="0.816">
+</testcase>
+</testsuite>
+<testsuite name="whitespace-matching.spec.js" timestamp="2026-09-30T06:23:37.994Z" hostname="firefox" tests="13" failures="0" skipped="0" time="13.856" errors="0">
+<testcase name="whitespace matching in rich-text fields › typed leading spaces are found by a plain-space needle" classname="whitespace-matching.spec.js" time="0.961">
+</testcase>
+<testcase name="whitespace matching in rich-text fields › typed leading spaces are found in whole-word mode" classname="whitespace-matching.spec.js" time="0.805">
+</testcase>
+<testcase name="whitespace matching in rich-text fields › hand-authored HTML with real spaces still matches (unbroken by the fix)" classname="whitespace-matching.spec.js" time="0.575">
+</testcase>
+<testcase name="whitespace matching in rich-text fields › regex mode already handles NBSP and must stay untouched" classname="whitespace-matching.spec.js" time="2.644">
+</testcase>
+<testcase name="whitespace matching in rich-text fields › a plain-space needle matches U+0020 space (included by decision)" classname="whitespace-matching.spec.js" time="0.531">
+</testcase>
+<testcase name="whitespace matching in rich-text fields › a plain-space needle matches U+00A0 no-break space (included by decision)" classname="whitespace-matching.spec.js" time="0.486">
+</testcase>
+<testcase name="whitespace matching in rich-text fields › a plain-space needle does NOT match U+2007 figure space (excluded by decision)" classname="whitespace-matching.spec.js" time="2.392">
+</testcase>
+<testcase name="whitespace matching in rich-text fields › a plain-space needle does NOT match U+202F narrow no-break space (excluded by decision)" classname="whitespace-matching.spec.js" time="2.352">
+</testcase>
+<testcase name="whitespace matching in rich-text fields › a plain-space needle does NOT match U+2009 thin space (excluded by decision)" classname="whitespace-matching.spec.js" time="0.558">
+</testcase>
+<testcase name="whitespace matching in rich-text fields › a needle mixing metacharacters and spaces still matches literally" classname="whitespace-matching.spec.js" time="0.503">
+</testcase>
+<testcase name="whitespace matching in rich-text fields › a metacharacter needle stays literal - &apos;$5.00 each&apos; must not match &apos;$5x00 each&apos;" classname="whitespace-matching.spec.js" time="0.631">
+</testcase>
+<testcase name="whitespace matching in rich-text fields › a metacharacter needle still matches across a substituted NBSP" classname="whitespace-matching.spec.js" time="0.61">
+</testcase>
+<testcase name="whitespace matching in rich-text fields › replacing a match containing NBSP writes the replacement literally, collapsing the NBSPs" classname="whitespace-matching.spec.js" time="0.808">
+</testcase>
+</testsuite>
+</testsuites>
