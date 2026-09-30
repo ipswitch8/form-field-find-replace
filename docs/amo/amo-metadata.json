@@ -13,7 +13,13 @@
     "CATEGORIES ARE NOT FREE TEXT. The slugs below were read from",
     "https://addons.mozilla.org/api/v5/addons/categories/ rather than guessed.",
     "There is no 'productivity' category for Firefox extensions, which is what",
-    "an earlier draft of docs/amo/listing.md assumed."
+    "an earlier draft of docs/amo/listing.md assumed.",
+    "",
+    "privacy_policy IS KEPT HERE BUT AMO IGNORES IT. It was sent with the 0.6.0",
+    "submission and did not land: has_privacy_policy stayed false. A direct",
+    "PATCH of that field returns 200, does not echo it back, and does not store",
+    "it. The text stays here as the single source of truth for what to paste",
+    "into the Developer Hub by hand - see docs/amo/listing.md."
   ],
 
   "categories": ["search-tools"],

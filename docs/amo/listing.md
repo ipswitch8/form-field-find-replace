@@ -15,13 +15,49 @@ and is in Mozilla's review queue.
 | Public page (live once approved) | https://addons.mozilla.org/en-US/firefox/addon/form-field-find-replace/ |
 
 Most of this listing was submitted through the API, from
-`docs/amo/amo-metadata.json`, rather than typed into the web UI — summary,
-description, category, support contact and privacy policy all went up with the
-package. The copy below is the source of truth for that file.
+`docs/amo/amo-metadata.json`, rather than typed into the web UI. The copy below
+is the source of truth for that file.
 
-**Still to do by hand in the Developer Hub**, because the API does not carry
-them: upload the **icon** and the **screenshots** from `docs/amo/assets/`. See
-the Assets section for which file goes where and the suggested captions.
+### What is actually on the listing
+
+Verified against the live record with `python tools/check-amo-status.py`, which
+queries the AMO API directly — while a version is in review the public pages
+404 and the public API refuses, so this is the only way to see it without
+logging in.
+
+| Field | State |
+|---|---|
+| name, summary, description | set, via the API |
+| category | `search-tools`, via the API |
+| support email / URL, homepage | set, via the API |
+| licence | MIT, accepted with the version |
+| **icon** | **uploaded** — 32, 64 and 128px |
+| **screenshots** | **3 uploaded**, with the captions suggested below |
+| **privacy policy** | **still missing** — see below |
+| version 0.6.0 | `unreviewed`, channel `listed` |
+| add-on status | `nominated` (in Mozilla's queue) |
+
+### The privacy policy cannot be set through the API
+
+It is the one listing field that has to be pasted into the Developer Hub by
+hand. This is not an oversight in the metadata file — the policy text *is* in
+`docs/amo/amo-metadata.json`, and it was sent.
+
+AMO simply discards it. A `PATCH` to `/api/v5/addons/addon/{slug}/` carrying
+`privacy_policy` returns **200 OK**, does not echo the field back, and leaves
+`has_privacy_policy: false`. Probed with a throwaway value to be sure it was not
+a read-back artefact: the value did not stick either. A tool was written to set
+it and then deleted, because it could not do its job and a tool that cannot do
+its job is worse than none.
+
+**To finish it:** Developer Hub → *Manage Listing* → *Privacy Policy*, and paste
+the text from `docs/amo/privacy-policy.md` (or the `privacy_policy` value in
+`amo-metadata.json`, which is the same text without the Markdown).
+
+It is *optional* here — the add-on declares
+`data_collection_permissions: {"required": ["none"]}`, so AMO does not require
+one. It is worth having anyway for a tool that reads form fields: a reviewer and
+a cautious user both benefit from an explicit "collects nothing" statement.
 
 `npm run sign -- listed` will report an "Approval: timeout exceeded" error at
 the end. That is not a failure — it is web-ext giving up on *waiting* for a
