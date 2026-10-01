@@ -146,10 +146,22 @@ addons.mozilla.org submissions, so signing fails validation without it.
 It is not supported at the spec-mandated `strict_min_version: "115.0"`, so
 declaring it trades the `MISSING_DATA_COLLECTION_PERMISSIONS` warning for two
 `KEY_FIREFOX_UNSUPPORTED_BY_MIN_VERSION` warnings. That is the correct trade:
-the key is forward-compatible (Firefox 115 ignores manifest keys it does not
+the key is forward-compatible (Firefox ignores manifest keys it does not
 recognise), errors stay at zero, and the alternative is a package that cannot
 be signed. An earlier revision omitted the key for exactly the opposite reason,
 when the only target was temporary local loading.
+
+The four possible manifests were each linted rather than argued about, and the
+numbers are in README.md under "The four options, measured". Zero warnings is
+achievable by dropping `strict_min_version` altogether; it is deliberately not
+taken, because that removes a declared compatibility floor rather than earning
+one.
+
+Note for anyone relying on the floor: **115 is declared, not tested.** The
+suites run on whatever Firefox is installed — 155 under Playwright, 142 under
+Selenium — so no test has exercised 115, nor any version lacking
+`data_collection_permissions`. Every API used predates 115, so it is plausible;
+it is not demonstrated.
 
 ---
 

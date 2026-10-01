@@ -560,8 +560,44 @@ An earlier revision omitted the key for exactly that reason, and that was the
 right call while the only target was temporary local loading. It is the wrong
 call for a distributable build: the key is **required for new
 addons.mozilla.org submissions**, so signing fails validation without it. The
-key is forward-compatible — Firefox 115 ignores manifest keys it does not
+key is forward-compatible — Firefox ignores manifest keys it does not
 recognise — and errors remain at zero, so the trade is worth making.
+
+### The four options, measured
+
+Each alternative was tried and linted rather than reasoned about:
+
+| manifest | errors | warnings | which |
+|---|---|---|---|
+| **115.0 + the key** (as shipped) | 0 | **2** | `KEY_FIREFOX_UNSUPPORTED_BY_MIN_VERSION`, desktop and Android |
+| 115.0, no key | 0 | 1 | `MISSING_DATA_COLLECTION_PERMISSIONS` |
+| 140.0 + the key | 0 | 1 | Android only — Android did not get the key until 142 |
+| no `strict_min_version` + the key | 0 | **0** | — |
+
+Zero warnings is available, and is not taken. Dropping `strict_min_version`
+only stops *declaring* a floor; it does not create compatibility. AMO would
+then infer one from the manifest, which is a worse answer than a deliberate
+one. Raising it to 140 would abandon every Firefox from 115 to 139 to silence a
+cosmetic warning — and would still leave the Android one, since Android did not
+get the key until 142.
+
+So the two warnings stand. They are AMO saying "you support back to 115, but
+this key does nothing before 140" — a feature absent on old versions, not a
+fault.
+
+### What is *not* verified: the 115 floor itself
+
+`strict_min_version: "115.0"` comes from `SPEC.md`, and **nothing in this
+project tests it.** The suites run against whatever Firefox is installed:
+Playwright uses 155, Selenium uses the system Firefox, 142 at the time of
+writing. Both are past 140, so no test has ever exercised a Firefox that
+*lacks* `data_collection_permissions`, and none has exercised 115.
+
+Every API the extension uses (`scripting`, `storage`, `tabs`, `runtime`,
+`action`) predates 115 comfortably, and MV3 event pages have been supported
+since 109, so 115 is *plausible*. It is not *demonstrated*. Treat it as a
+declared intention rather than a tested guarantee, and if it ever matters,
+test it on an actual 115 ESR before relying on it.
 
 ## Security tooling
 
