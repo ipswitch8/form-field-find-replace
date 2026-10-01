@@ -33,14 +33,18 @@ logging in.
 | licence | MIT, accepted with the version |
 | **icon** | **uploaded** — 32, 64 and 128px |
 | **screenshots** | **3 uploaded**, with the captions suggested below |
-| **privacy policy** | **still missing** — see below |
+| **privacy policy** | **set** — pasted in by hand; see below for why that was necessary |
 | version 0.6.0 | `unreviewed`, channel `listed` |
 | add-on status | `nominated` (in Mozilla's queue) |
 
-### The privacy policy cannot be set through the API
+### The privacy policy could not be set through the API — it was pasted in
+
+**Done.** `check-amo-status.py` now reports `privacy policy: set`. The rest of
+this section is kept because it explains why a manual step was needed at all,
+and will be needed again on any future add-on.
 
 It is the one listing field that has to be pasted into the Developer Hub by
-hand. This is not an oversight in the metadata file — the policy text *is* in
+hand. This was not an oversight in the metadata file — the policy text *is* in
 `docs/amo/amo-metadata.json`, and it was sent.
 
 AMO simply discards it. A `PATCH` to `/api/v5/addons/addon/{slug}/` carrying
@@ -50,9 +54,10 @@ a read-back artefact: the value did not stick either. A tool was written to set
 it and then deleted, because it could not do its job and a tool that cannot do
 its job is worse than none.
 
-**To finish it:** Developer Hub → *Manage Listing* → *Privacy Policy*, and paste
-the text from `docs/amo/privacy-policy.md` (or the `privacy_policy` value in
-`amo-metadata.json`, which is the same text without the Markdown).
+**How it was finished:** Developer Hub → *Manage Listing* → *Privacy Policy*,
+pasting the text from `docs/amo/privacy-policy.md` (or the `privacy_policy`
+value in `amo-metadata.json`, which is the same text without the Markdown).
+Same route if it ever needs changing.
 
 It is *optional* here — the add-on declares
 `data_collection_permissions: {"required": ["none"]}`, so AMO does not require
@@ -263,15 +268,26 @@ Suggested captions:
 
 ---
 
-## Before you submit — the checklist
+## The submission checklist — all done
 
-- [ ] Decide the **repository visibility** question above. A listed add-on
-      pointing at a private repo is a broken support link.
-- [ ] Confirm the **MIT licence** and the copyright line in `LICENSE`
-      (currently "Michael Hasse (itwerx.net)").
-- [x] **Add-on id** — changed to `inquiries@itwerx.net` at v0.6.0. See below.
-- [ ] Run `npm run sign -- listed` (the script already accepts the channel
-      argument and validates it).
+Kept as the record of what had to happen, and as the list to work through for
+any future add-on.
+
+- [x] **Repository visibility** — made public, after a full-history secret scan
+      (see above). A listed add-on pointing at a private repo would have been a
+      broken support link on every listing page.
+- [x] **MIT licence** confirmed, copyright line "Michael Hasse (itwerx.net)"
+      in `LICENSE`. Change it there if that is ever wrong.
+- [x] **Add-on id** — changed to `inquiries@itwerx.net` at v0.6.0. See below
+      for what that cost.
+- [x] **Submitted** — `npm run sign -- listed`, version 0.6.0.
+- [x] **Icon and screenshots** uploaded through the Developer Hub (the API does
+      not carry images).
+- [x] **Privacy policy** pasted in through the Developer Hub (the API discards
+      it — see above).
+
+The only thing left is Mozilla's review. `python tools/check-amo-status.py`
+reports where it is; there is nothing further to do from this side.
 
 ### The add-on id was changed at v0.6.0 — what that cost
 
