@@ -5,23 +5,55 @@ editable form fields of the current page — plain text, whole-word, or full
 regular expressions with backreferences — without ever leaving the browser.
 See `CLAUDE.md` for the full security threat model and permission rationale.
 
+## Status
+
+**v0.6.0 is submitted to addons.mozilla.org on the listed channel and is
+awaiting Mozilla's review.** Add-on status `nominated`, version file status
+`unreviewed`.
+
+The listing itself is complete — name, summary, description, category
+(`search-tools`), support contact, privacy policy, icon and three screenshots
+are all in place. Nothing is waiting on us; it is queue time.
+
+When it is approved, two things happen: it becomes installable in one click
+from the public page below, and the signed `.xpi` gets attached to the v0.6.0
+release.
+
+| | |
+|---|---|
+| Public page (live on approval) | https://addons.mozilla.org/en-US/firefox/addon/form-field-find-replace/ |
+| Check the current state | `python tools/check-amo-status.py` |
+
+That script exists because while a version is in review the public page 404s
+and the public API refuses, so there is otherwise no way to see the state
+without logging in to the Developer Hub.
+
 ## Getting the extension package
 
-A **Mozilla-signed** `.xpi` is attached to each tagged release:
+**Right now there is no installable build of 0.6.0.** Listed versions are
+signed by Mozilla *on approval*, not on upload, so there is nothing to download
+until the review completes. Unsigned builds are deliberately never attached to
+a release — see the "not been verified" note under Installing for why that
+matters.
 
-**https://github.com/ipswitch8/form-field-find-replace/releases/latest**
+The most recent installable build is **v0.5.0**, which carries a signed `.xpi`:
 
-It is signed by addons.mozilla.org on the *unlisted* channel (self-distributed,
-not published in the public add-on directory), so it installs permanently in
-ordinary release Firefox with signature enforcement left on.
+**https://github.com/ipswitch8/form-field-find-replace/releases/tag/v0.5.0**
+
+> **⚠ v0.5.0 has a different add-on id.** The id changed at 0.6.0 from
+> `mhasse@itwerx.net` to `inquiries@itwerx.net`. To Firefox that makes them two
+> different add-ons: **v0.5.0 will not upgrade to v0.6.0.** If you install
+> v0.5.0 now, remove it in `about:addons` before installing 0.6.0 later, or you
+> will end up with both. You lose no features by using it in the meantime:
+> 0.6.0 changed only the id and the version number, nothing else.
+
+v0.5.0 is signed on the *unlisted* channel (self-distribution), so it installs
+permanently in ordinary release Firefox with signature enforcement left on.
 
 Build artifacts are gitignored, so no package lives in the source tree.
 
-It is signed on the **unlisted** channel, which means self-distribution: it is
-not listed in the public add-on directory and is not found by searching
-addons.mozilla.org. `docs/amo/` holds the groundwork for a listed submission —
-copy, privacy policy, and generated icons and screenshots — if that ever
-becomes wanted. Nothing there has been submitted.
+`docs/amo/` holds the listing copy, privacy policy, and the generated icons and
+screenshots, with `tools/make-amo-assets.js` to regenerate them.
 
 Questions: **inquiries@itwerx.net**
 
@@ -34,7 +66,12 @@ comment in `web-ext-config.cjs` for why.
 
 ### Permanent — any Firefox, including release (recommended)
 
-1. Download the signed `.xpi` from the release above.
+Once 0.6.0 clears review, this is a one-click install from the public AMO page
+and none of the steps below are needed.
+
+Until then, from the v0.5.0 release (and note the id warning above):
+
+1. Download the signed `.xpi` from the v0.5.0 release.
 2. Open `about:addons`.
 3. Gear icon → **Install Add-on From File…**.
 4. Select the `.xpi` and confirm.
@@ -72,8 +109,9 @@ on the current tab.
 ## Building and signing it yourself
 
 ```bash
-npm run build:xpi     # unsigned package -> web-ext-artifacts/
-bash sign.sh          # submit to AMO, download the signed .xpi
+npm run build:xpi          # unsigned package -> web-ext-artifacts/
+npm run sign               # unlisted: signs and downloads the .xpi
+npm run sign -- listed     # listed: submits for review
 ```
 
 `build:xpi` writes `web-ext-artifacts/form_field_find_replace-<version>.zip`
@@ -93,6 +131,30 @@ WEB_EXT_API_SECRET=<the long secret>
 That filename is gitignored **and** excluded from the packaged archive — worth
 being deliberate about, since `web-ext sign` uploads the built archive to
 Mozilla, so anything not excluded leaves the machine.
+
+**The two channels behave differently, and the listed one looks like a failure
+when it is not.**
+
+*Unlisted* signs on upload: the signed `.xpi` lands in `web-ext-artifacts/`
+within a minute or two, and you install it yourself.
+
+*Listed* submits for human review. `sign.sh` passes the listing metadata from
+`docs/amo/amo-metadata.json` — without it AMO rejects the submission outright,
+because a listed version requires a licence field. The command then ends with:
+
+```
+WebExtError: Approval: timeout exceeded. When approved the signed XPI file
+can be downloaded from https://addons.mozilla.org/.../versions/<id>
+```
+
+and a non-zero exit. **That is not a failed upload.** It is web-ext giving up
+on *waiting* for a reviewer, long after the submission succeeded; the version
+URL it prints is the proof it landed. Use `python tools/check-amo-status.py` to
+see the real state.
+
+One field cannot be set this way: AMO silently discards `privacy_policy` on the
+API — a `PATCH` returns 200, does not echo the field, and leaves
+`has_privacy_policy` false. It has to be pasted into the Developer Hub by hand.
 
 To confirm a signed build really is valid, `python
 test/selenium/verify_signed.py` performs a **permanent** install into a real
@@ -120,7 +182,7 @@ npm install
 npm test
 ```
 
-`npm test` runs the full Playwright suite (currently 61 tests) against
+`npm test` runs the full Playwright suite (currently 135 tests) against
 `test/fixture.html` (small, feature-focused fixture: password/hidden/disabled/
 readonly fields, contenteditable, shadow DOM, same-origin and cross-origin
 iframes, a controlled-input widget, and one of each numeric/date input type)
@@ -169,7 +231,8 @@ injection wired to that listener in `background.js` was dead code and the popup
 messaged a content script nobody had injected. Every real click produced
 "Could not reach the page".
 
-All 61 Playwright tests passed throughout, because every one of them injects
+All 61 Playwright tests passed throughout — 61 being the count at the time, not
+today's — because every one of them injects
 `content/find-replace.js` itself — by construction they can never exercise the
 extension's own activation path. Only clicking the real button in a real Firefox
 found it.
